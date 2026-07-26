@@ -1,10 +1,5 @@
-"""LBO Lab — the local Streamlit workbench over lbo_engine.
-
-Run with:  streamlit run app.py
-
-Every widget feeds one Assumptions object; every chart is a view of one
-LBOResult. The app contains no financial logic of its own.
-"""
+"""LBO Lab — the simulator. All financial logic lives in lbo_engine;
+this page is a styled view over one Assumptions object and one LBOResult."""
 
 import math
 
@@ -21,8 +16,10 @@ from lbo_engine.analysis import (
 )
 from lbo_engine.calibration import check_assumptions
 from lbo_engine.returns import returns_bridge, sponsor_irr
+from ui import BRASS, PINE, PINE_DEEP, RUST, TEXT_FAINT, flag_banner, footer, metric_tiles, section, use_theme
 
-st.set_page_config(page_title="LBO Lab", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Simulator — LBO Lab", page_icon="📈", layout="wide")
+use_theme()
 
 # ---------------------------------------------------------------- assumptions
 st.sidebar.title("Assumptions")
@@ -40,12 +37,12 @@ capex_pct = st.sidebar.slider("Capex % of revenue", 0.0, 15.0, 4.0, 0.5) / 100
 nwc_pct = st.sidebar.slider("NWC % of revenue", 0.0, 30.0, 10.0, 1.0) / 100
 tax_rate = st.sidebar.slider("Tax rate %", 0.0, 45.0, 25.0, 1.0) / 100
 
-st.sidebar.subheader("Debt — senior term loan")
+st.sidebar.subheader("Senior term loan")
 senior_turns = st.sidebar.slider("Senior leverage (× EBITDA)", 0.5, 7.0, 4.0, 0.25)
 senior_rate = st.sidebar.slider("Senior cash rate %", 2.0, 12.0, 5.5, 0.25) / 100
 senior_amort = st.sidebar.slider("Mandatory amort % of original p.a.", 0.0, 20.0, 5.0, 1.0) / 100
 
-st.sidebar.subheader("Debt — mezzanine")
+st.sidebar.subheader("Mezzanine")
 mezz_turns = st.sidebar.slider("Mezz leverage (× EBITDA)", 0.0, 4.0, 1.0, 0.25)
 mezz_rate = st.sidebar.slider("Mezz cash rate %", 4.0, 16.0, 8.0, 0.25) / 100
 mezz_pik = st.sidebar.slider("Mezz PIK rate %", 0.0, 8.0, 3.0, 0.25) / 100
@@ -97,24 +94,19 @@ assumptions = Assumptions(
 )
 
 # ---------------------------------------------------------------- run
-st.title("LBO Lab")
+st.title("Simulator")
 
-# Implied EBITDA consistency check: EBITDA input vs revenue × margin at entry.
 implied = entry_revenue * ebitda_margin
 if abs(implied - entry_ebitda) / entry_ebitda > 0.15:
-    st.warning(
-        f"Entry EBITDA ({entry_ebitda:,.0f}) and revenue × margin "
-        f"({implied:,.0f}) disagree by more than 15% — the projection is "
-        "driven by revenue × margin, so entry EBITDA only sizes the cheque and the debt."
+    flag_banner(
+        f"Entry EBITDA ({entry_ebitda:,.0f}) and revenue × margin ({implied:,.0f}) disagree by "
+        "more than 15% — the projection is driven by revenue × margin, so entry EBITDA only "
+        "sizes the cheque and the debt.",
+        "Internal consistency check", "amber",
     )
 
-# Guardrails: plausibility flags against published market benchmarks.
 for flag in check_assumptions(assumptions):
-    text = f"{flag.message}  \n*Source: {flag.source}*"
-    if flag.level == "amber":
-        st.warning(text, icon="⚠️")
-    else:
-        st.info(text, icon="ℹ️")
+    flag_banner(flag.message, flag.source, flag.level)
 
 try:
     result = run_lbo(assumptions)
@@ -126,16 +118,16 @@ irr_value = sponsor_irr(result)
 bridge = returns_bridge(result)
 su = result.sources_uses
 
-# ---------------------------------------------------------------- tiles
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Sponsor IRR", f"{irr_value:.1%}")
-c2.metric("MOIC", f"{result.moic:.2f}×")
-c3.metric("Equity cheque", f"{result.entry_equity:,.0f}")
-c4.metric("Exit equity", f"{result.exit_equity:,.0f}")
-c5.metric("Entry leverage", f"{assumptions.total_leverage_turns:.2f}×")
+metric_tiles([
+    ("Sponsor IRR", f"{irr_value:.1%}", f"{assumptions.hold_years}-year hold", True),
+    ("MOIC", f"{result.moic:.2f}×", "multiple of invested capital", True),
+    ("Equity cheque", f"{result.entry_equity:,.0f}", "at close", False),
+    ("Exit equity", f"{result.exit_equity:,.0f}", f"at {assumptions.exit_multiple:.2f}× exit", False),
+    ("Entry leverage", f"{assumptions.total_leverage_turns:.2f}×", "debt / EBITDA", False),
+])
 
 # ---------------------------------------------------------------- S&U
-with st.expander("Sources & Uses at close", expanded=False):
+with st.expander("Sources & Uses at close"):
     left, right = st.columns(2)
     with left:
         st.markdown("**Sources**")
@@ -155,7 +147,7 @@ with st.expander("Sources & Uses at close", expanded=False):
 left, right = st.columns(2)
 
 with left:
-    st.subheader("Value-creation bridge")
+    section("Attribution", "Value-creation bridge")
     labels = ["Entry equity", "EBITDA growth", "Multiple", "Deleveraging", "Fees", "Exit equity"]
     fig = go.Figure(
         go.Waterfall(
@@ -166,63 +158,59 @@ with left:
                 bridge.entry_equity, bridge.ebitda_growth, bridge.multiple_expansion,
                 bridge.deleveraging, bridge.fee_drag, 0,
             ],
-            connector={"line": {"width": 1}},
+            increasing={"marker": {"color": PINE_DEEP}},
+            decreasing={"marker": {"color": RUST}},
+            totals={"marker": {"color": BRASS}},
+            connector={"line": {"width": 1, "color": TEXT_FAINT}},
         )
     )
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
+    fig.update_layout(height=380, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 with right:
-    st.subheader("Debt paydown")
+    section("Deleveraging", "Debt paydown across the hold")
     paydown = debt_paydown_table(assumptions)
     fig2 = go.Figure()
     for col in [c for c in paydown.columns if c != "cash"]:
         fig2.add_trace(
-            go.Scatter(
-                x=paydown.index, y=paydown[col], name=col,
-                stackgroup="debt", mode="lines",
-            )
+            go.Scatter(x=paydown.index, y=paydown[col], name=col, stackgroup="debt", mode="lines")
         )
     fig2.add_trace(
-        go.Scatter(x=paydown.index, y=paydown["cash"], name="cash", mode="lines+markers")
+        go.Scatter(x=paydown.index, y=paydown["cash"], name="cash",
+                   mode="lines+markers", line=dict(dash="dot"))
     )
-    fig2.update_layout(
-        height=380, margin=dict(l=10, r=10, t=10, b=10),
-        xaxis_title="Year", yaxis_title="Balance",
-    )
+    fig2.update_layout(height=380, xaxis_title="Year", yaxis_title="Balance")
     st.plotly_chart(fig2, use_container_width=True)
 
 # ---------------------------------------------------------------- tornado + scenarios
 left, right = st.columns(2)
 
 with left:
-    st.subheader("Tornado: what actually moves the IRR")
+    section("Drivers", "What actually moves the IRR")
     torn = tornado(assumptions)
     base_irr_pct = torn["base_irr"].iloc[0] * 100
     fig3 = go.Figure()
-    drivers = torn.index.tolist()[::-1]  # widest bar on top
+    drivers = torn.index.tolist()[::-1]
     fig3.add_trace(go.Bar(
         y=drivers,
         x=[(torn.loc[d, "low_irr"] * 100) - base_irr_pct for d in drivers],
-        base=base_irr_pct, orientation="h", name="Downside",
-        marker_color="#c0653c",
+        base=base_irr_pct, orientation="h", name="Downside", marker_color=RUST,
     ))
     fig3.add_trace(go.Bar(
         y=drivers,
         x=[(torn.loc[d, "high_irr"] * 100) - base_irr_pct for d in drivers],
-        base=base_irr_pct, orientation="h", name="Upside",
-        marker_color="#1f7a51",
+        base=base_irr_pct, orientation="h", name="Upside", marker_color=PINE,
     ))
-    fig3.add_vline(x=base_irr_pct, line_width=1, line_dash="dash")
+    fig3.add_vline(x=base_irr_pct, line_width=1, line_dash="dash", line_color=TEXT_FAINT)
     fig3.update_layout(
-        height=380, margin=dict(l=10, r=10, t=10, b=10), barmode="overlay",
-        xaxis_title="Sponsor IRR %", legend=dict(orientation="h", y=-0.25),
+        height=380, barmode="overlay", xaxis_title="Sponsor IRR %",
+        legend=dict(orientation="h", y=-0.25),
     )
     st.plotly_chart(fig3, use_container_width=True)
     st.caption("One driver moved at a time, all else held. Ranked widest first.")
 
 with right:
-    st.subheader("Scenarios")
+    section("Resilience", "Scenarios & stress")
     rows = []
     for name, variant in scenario_set(assumptions).items():
         try:
@@ -242,28 +230,24 @@ with right:
     st.table(rows)
     st.caption(
         "Upside/downside: ±200bps growth, ±100bps margin, ±0.5–1.0× exit. "
-        "Recession: EBITDA −20% in years 1–2 with recovery, exit −1.5×. "
-        "A V-shaped recession can beat the permanent downside — terminal "
-        "EBITDA recovers; a downgrade compounds into the exit."
+        "Recession: EBITDA −20% in years 1–2 with recovery, exit −1.5×."
     )
 
-    st.subheader("Breakeven")
-    target = st.select_slider("Target IRR", options=[0.15, 0.20, 0.25, 0.30], value=0.20,
-                              format_func=lambda v: f"{v:.0%}")
+    target = st.select_slider(
+        "Breakeven — target IRR", options=[0.15, 0.20, 0.25, 0.30], value=0.20,
+        format_func=lambda v: f"{v:.0%}",
+    )
     be = breakeven_exit_multiple(assumptions, target)
     if math.isnan(be):
-        st.metric(f"Exit multiple needed for {target:.0%} IRR", "unreachable")
+        metric_tiles([("Breakeven exit multiple", "unreachable", f"for {target:.0%} IRR", False)] )
     else:
-        delta = be - entry_multiple
-        st.metric(
-            f"Exit multiple needed for {target:.0%} IRR",
-            f"{be:.2f}×",
-            f"{delta:+.2f}× vs entry",
-            delta_color="inverse",
-        )
+        metric_tiles([(
+            "Breakeven exit multiple", f"{be:.2f}×",
+            f"{be - entry_multiple:+.2f}× vs entry — expansion you must be handed", be <= entry_multiple,
+        )])
 
 # ---------------------------------------------------------------- sensitivity
-st.subheader("Sensitivity: IRR across entry × exit multiple")
+section("Sensitivity", "IRR across entry × exit multiple")
 entry_range = [round(entry_multiple + d, 2) for d in (-2.0, -1.0, 0.0, 1.0, 2.0)]
 exit_range = [round(exit_multiple + d, 2) for d in (-2.0, -1.0, 0.0, 1.0, 2.0)]
 grid = entry_exit_sensitivity(assumptions, entry_range, exit_range)
@@ -273,22 +257,21 @@ heat = go.Figure(
         z=grid.values * 100,
         x=[f"{x:.2f}×" for x in grid.columns],
         y=[f"{y:.2f}×" for y in grid.index],
-        colorscale="Greens",
+        colorscale=[[0, "#141b17"], [1, PINE]],
         text=[[("–" if math.isnan(v) else f"{v:.1%}") for v in row] for row in grid.values],
         texttemplate="%{text}",
         colorbar={"title": "IRR %"},
     )
 )
 heat.update_layout(
-    height=380, margin=dict(l=10, r=10, t=10, b=10),
-    xaxis_title="Exit multiple", yaxis_title="Entry multiple",
+    height=400, xaxis_title="Exit multiple", yaxis_title="Entry multiple",
     yaxis={"autorange": "reversed"},
 )
 st.plotly_chart(heat, use_container_width=True)
 st.caption("Dashes mark structures that fail (revolver exhausted) or wipe the sponsor — shown honestly, not smoothed over.")
 
 # ---------------------------------------------------------------- schedule
-st.subheader("Annual schedule")
+section("The numbers", "Annual schedule")
 st.dataframe(result.to_dataframe().round(1), use_container_width=True)
 
 iters = ", ".join(str(row.interest_iterations) for row in result.years)
@@ -296,3 +279,5 @@ st.caption(
     f"Interest circularity resolved iteratively each year (passes: {iters}); "
     "interest charged on average of opening and closing balances."
 )
+
+footer()
