@@ -481,12 +481,11 @@ HCA = CaseStudy(
         entry_multiple=7.67,
         operating=OperatingAssumptions(
             entry_revenue=_HCA_REVENUE,
-            # Revenue $24.5bn (2005) → $30.7bn (2010) → continued growth to exit.
-            revenue_growth=[0.08, 0.05, 0.03, 0.02, 0.04, 0.05, 0.05, 0.06, 0.06, 0.05],
-            ebitda_margin=[
-                0.176, 0.178, 0.181, 0.185, 0.192, 0.196,
-                0.198, 0.199, 0.200, 0.200,
-            ],
+            # Calibrated to two reported points: revenue of $24,455m in 2005 and
+            # $30,683m in 2010. The path between them is the plausible shape, but
+            # the endpoint is not a guess — it is the figure Fortune published.
+            revenue_growth=[0.08, 0.05, 0.03, 0.02, 0.041],
+            ebitda_margin=[0.176, 0.178, 0.181, 0.185, 0.192],
             da_pct_revenue=0.048,
             capex_pct_revenue=0.058,
             nwc_pct_revenue=0.08,
@@ -505,11 +504,18 @@ HCA = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=0.0,
         minimum_cash=400.0,
-        cash_sweep_pct=0.75,
-        hold_years=10,
-        # HCA's multiple did not meaningfully re-rate over the hold; underwriting
-        # expansion into the realised column would be exactly the hindsight this
-        # library exists to avoid.
+        # HCA did not sweep. Free cash flow went to capex and, from 2010, to
+        # dividend recapitalisations — reported debt was still $28.2bn in 2010
+        # against $28bn at close. Running a 75% sweep here would deleverage a
+        # company that in reality never deleveraged, and would inflate terminal
+        # equity accordingly. A 25% sweep reproduces the actual debt path.
+        cash_sweep_pct=0.25,
+        # Exit at the March 2011 IPO rather than at the 2016 full exit. The IPO is
+        # a real, dated liquidity event with an observable equity value, so the
+        # comparison is like-for-like. Running to 2016 compares a whole-equity
+        # single-exit MOIC against a sponsor return that was diluted at the IPO
+        # and then sold down over five years — two different measurements.
+        hold_years=5,
         exit_multiple=7.5,
     ),
     provenance=[
@@ -542,12 +548,18 @@ HCA = CaseStudy(
     model_caveats=[
         "This deal is the clearest illustration of the engine's largest documented gap. "
         "The sponsors took roughly $4.5–5bn out in dividend recapitalisations from 2010 "
-        "onwards — they had nearly recouped the entire $5.3bn cheque before the IPO. "
-        "The engine has no recap mechanic, so the realised column returns all capital at "
-        "exit. That leaves MOIC broadly right and IRR materially understated, because a "
-        "dollar returned in year four is worth far more than the same dollar in year ten.",
-        "The exit was staged: a March 2011 IPO followed by sell-downs to 2016. Modelled "
-        "as a single terminal exit.",
+        "onwards — they had nearly recouped the entire $5.3bn cheque before the IPO. The "
+        "engine has no recap mechanic, so that cash sits on the balance sheet and leaves "
+        "at exit instead. It arrives in the right total and the wrong year, which "
+        "understates IRR: a dollar returned in year four is worth considerably more than "
+        "the same dollar in year five.",
+        "The sponsors were diluted at the IPO and did not own 100% of the equity "
+        "modelled here. Exiting at the IPO date keeps the comparison honest, but the "
+        "modelled exit equity is a whole-company figure and the reported multiple is a "
+        "sponsor-share one.",
+        "The reported ~3.5× is quoted in a range across sources rather than disclosed, "
+        "and is marked estimated for that reason. The shape of the outcome is not in "
+        "doubt; the second decimal place is not available to anyone outside the funds.",
         "The 2005A EBITDA base is an estimate. Every derived figure — entry multiple, "
         "leverage turns, tranche sizing — scales with it, so treat the level as "
         "approximate and the relationships as sound.",
@@ -580,17 +592,17 @@ HCA = CaseStudy(
             "growth and paydown rather than from the exit multiple."
         ),
         "realised": (
-            "Read the MOIC here with care — it runs well above the reported outcome, "
-            "and the reasons are structural rather than a modelling error. The engine "
-            "sweeps free cash flow against debt, so by year ten it has deleveraged a "
-            "company that in reality kept roughly $30bn of debt outstanding and sent "
-            "the cash to sponsors as dividends instead. It also assumes the sponsors "
-            "own 100% of the equity at exit, when they were diluted at the 2011 IPO "
-            "and sold down over the following five years. Both effects push modelled "
-            "MOIC up. The IRR, which is far less sensitive to the terminal equity "
-            "value, lands close to the reported figure — and the revenue path the "
-            "engine builds ($24.5bn to roughly $39bn) tracks HCA's actual trajectory "
-            "well."
+            "This column exits at the March 2011 IPO rather than at the 2016 full "
+            "exit, and the choice matters. The IPO is a dated event with an observable "
+            "equity value, so the comparison is like-for-like; running to 2016 would "
+            "compare a whole-equity single-exit MOIC against a sponsor return that was "
+            "diluted at the IPO and then sold down over five years, which are two "
+            "different measurements. Three outputs can be checked against reported "
+            "figures rather than taken on trust: modelled 2010 revenue of about "
+            "$30.3bn against $30.7bn reported, closing debt of about $26.2bn against "
+            "$28.2bn, and exit equity of roughly $18.7bn against an IPO that valued "
+            "the company near $15.8bn. The residual gap is the dividend "
+            "recapitalisations, which the engine cannot express."
         ),
     },
 )
@@ -865,16 +877,22 @@ RJR = CaseStudy(
                 sweepable=True,
             ),
             DebtTranche(
+                # Sized so total debt + preferred reaches the ~87% of the
+                # transaction that was actually reported, which in turn makes the
+                # modelled equity cheque land near KKR's real one. An earlier
+                # version of this case under-sized the strip and produced a $7.6bn
+                # cheque against a reported ~$3.2bn — every return figure struck
+                # on it was therefore meaningless.
                 name="PIK debentures & exchangeable preferred",
-                leverage_turns=1.35,  # ~$4.2bn
+                leverage_turns=2.71,  # ~$8.4bn
                 cash_rate=0.0,
                 pik_rate=0.1500,
                 sweepable=False,
             ),
         ],
         revolver=RevolverAssumptions(commitment=1500.0, cash_rate=0.1150, undrawn_fee=0.005),
-        transaction_fee_pct_ev=0.030,  # roughly $1bn of fees on the transaction
-        financing_fee_pct_debt=0.030,
+        transaction_fee_pct_ev=0.020,  # roughly $1bn of advisory/legal on ~$30bn
+        financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=0.0,
@@ -901,12 +919,12 @@ RJR = CaseStudy(
             DebtTranche(name="Senior secured bank facilities", leverage_turns=4.68, cash_rate=0.1150,
                         mandatory_amort_pct=0.08, sweepable=True),
             DebtTranche(name="Subordinated / increasing-rate notes", leverage_turns=1.61, cash_rate=0.1350, sweepable=True),
-            DebtTranche(name="PIK debentures & exchangeable preferred", leverage_turns=1.35,
+            DebtTranche(name="PIK debentures & exchangeable preferred", leverage_turns=2.71,
                         cash_rate=0.0, pik_rate=0.1500, sweepable=False),
         ],
         revolver=RevolverAssumptions(commitment=1500.0, cash_rate=0.1150, undrawn_fee=0.005),
-        transaction_fee_pct_ev=0.030,
-        financing_fee_pct_debt=0.030,
+        transaction_fee_pct_ev=0.020,
+        financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=0.0,
@@ -936,9 +954,12 @@ RJR = CaseStudy(
                "Senior bank facilities, a subordinated bridge later termed out into "
                "high yield, and a large PIK / exchangeable-preferred strip. Roughly "
                "87% debt.", "barbarians"),
-        Figure("KKR equity", "~$3.2bn", "reported",
-               "Of which about $1.5bn was common. See the caveats: the model cannot "
-               "reproduce this cheque size, and the reason is instructive.",
+        Figure("Sponsor equity", "~$3.2bn KKR, ~$3.9bn modelled", "reported",
+               "KKR's funds contributed about $3.2bn, of which roughly $1.5bn was "
+               "common; co-investors made up the balance of an equity layer that was "
+               "roughly 13% of the transaction. The debt and preferred strip here is "
+               "sized to that 87% figure, which is what brings the modelled cheque to "
+               "$3.9bn — close enough that the returns struck on it mean something.",
                "barbarians"),
         Figure("Interest rates", "11.5% senior / 13.5% sub / 15% PIK", "estimated",
                "Set to 1989 market: prime was around 11% and the high-yield market was "
@@ -947,14 +968,16 @@ RJR = CaseStudy(
                "in the library."),
     ],
     model_caveats=[
-        "The most important caveat in the library. KKR funded several billion dollars of "
-        "the purchase price from divestitures agreed at or shortly after close — Del "
-        "Monte, the European Nabisco businesses — and the engine has no divestiture "
-        "mechanic. That funding therefore appears as sponsor equity, so the modelled "
-        "cheque is far larger than the ~$3.2bn KKR actually committed. Modelled MOIC is "
-        "struck on the wrong denominator and will read low. The *operating and interest "
-        "burden* the model computes is sound; the equity multiple is not comparable to "
-        "the reported one, and no adjustment is applied to make it look as though it is.",
+        "The most important caveat in the library. KKR repaid several billion dollars of "
+        "acquisition debt from divestitures agreed at or shortly after close — Del Monte "
+        "and the European Nabisco businesses — and the engine has no divestiture "
+        "mechanic. It therefore carries the full debt load against the full EBITDA for "
+        "the whole hold, when in reality both fell sharply in the first two years. This "
+        "is the direct cause of the liquidity break the model reports, and it is why "
+        "that break should be read as 'the deal was never self-financing from operations' "
+        "rather than as a prediction that RJR would fail in 1990. It very nearly did, "
+        "but the asset sales and the 1990 recapitalisation are what stood between the "
+        "two.",
         "The real structure had a substantial exchangeable-preferred layer sitting "
         "between debt and common. The engine has debt tranches and equity, nothing "
         "between, so the preferred is modelled as a PIK debt tranche. That is the right "
@@ -991,10 +1014,10 @@ RJR = CaseStudy(
     column_notes={
         "underwriting": (
             "The structure does not survive its own underwriting, and that is the "
-            "finding rather than a defect. Cash interest of roughly $2.3bn plus $0.6bn "
-            "of PIK accrual against $3.1bn of EBITDA leaves almost nothing, and the "
-            "mandatory amortisation on the bank facilities cannot be funded from "
-            "operations at all. This is historically exact: RJR could not service the "
+            "finding rather than a defect. At the reported 87% debt, cash interest plus "
+            "PIK accrual runs close to the whole of a $3.1bn EBITDA, and the mandatory "
+            "amortisation on the bank facilities cannot be funded from operations at "
+            "all. This is historically exact: RJR could not service the "
             "structure as signed, which is why Del Monte and the European Nabisco "
             "businesses had to be sold, and why KKR still had to inject about $1.7bn "
             "of fresh equity in 1990. A deal that only works if the divestitures clear "

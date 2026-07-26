@@ -147,7 +147,8 @@ export function CaseStudy() {
             moic={data.underwriting.moic}
             years={data.underwriting.assumptions.hold_years}
             failed={data.underwriting.failed}
-            message={data.underwriting.message}
+            breaksInYear={data.underwriting.breaks_in_year}
+            survivedYears={data.underwriting.survived_years}
           />
           <VerdictCard
             title="Modelled — actual path"
@@ -156,7 +157,8 @@ export function CaseStudy() {
             moic={data.realised?.moic ?? null}
             years={data.realised?.assumptions.hold_years}
             failed={data.realised?.failed ?? false}
-            message={data.realised?.message ?? null}
+            breaksInYear={data.realised?.breaks_in_year}
+            survivedYears={data.realised?.survived_years}
           />
           <VerdictCard
             title="What actually happened"
@@ -165,7 +167,6 @@ export function CaseStudy() {
             moic={data.outcome.realised_moic}
             years={data.outcome.holding_years}
             failed={false}
-            message={null}
             actual
             confidence={data.outcome.confidence}
           />
@@ -196,9 +197,35 @@ export function CaseStudy() {
 
         {active?.failed && (
           <div className="notice notice-bad">
-            <strong>The engine refuses to model this structure.</strong>
-            <div style={{ marginTop: "var(--s2)" }}>{active.message}</div>
+            <strong>
+              Liquidity break in year {active.breaks_in_year}, after{" "}
+              {active.survived_years}{" "}
+              {active.survived_years === 1 ? "year" : "years"} of debt service.
+            </strong>
+            <div style={{ marginTop: "var(--s2)" }}>
+              Operating cash flow no longer covers contractual interest and amortisation,
+              and the revolver cannot fund the gap. The engine stops rather than printing a
+              schedule that quietly runs a negative cash balance — which is what a model
+              without a liquidity constraint would do, and why such models never show a deal
+              failing. The years it <em>did</em> service are below, so the drain is legible
+              rather than merely asserted.
+            </div>
           </div>
+        )}
+
+        {active?.partial_run && (
+          <>
+            <Flags flags={active.partial_run.flags} />
+            <Card
+              title={`Schedule to the break — years 1 to ${active.survived_years}`}
+              note="No exit occurred, so this carries no IRR, MOIC or exit equity. It is the operating and debt-service record up to the point the structure stopped funding itself."
+            >
+              <ScheduleTable run={active.partial_run} />
+            </Card>
+            <Card title="Credit statistics" eyebrow="Watch coverage fall">
+              <CreditTable credit={active.partial_run.credit} />
+            </Card>
+          </>
         )}
 
         {active?.run && (
@@ -304,7 +331,8 @@ function VerdictCard({
   moic,
   years,
   failed,
-  message,
+  breaksInYear,
+  survivedYears = 0,
   actual = false,
   confidence,
 }: {
@@ -314,7 +342,8 @@ function VerdictCard({
   moic: number | null;
   years?: number;
   failed: boolean;
-  message: string | null;
+  breaksInYear?: number | null;
+  survivedYears?: number;
   actual?: boolean;
   confidence?: string;
 }) {
@@ -323,8 +352,12 @@ function VerdictCard({
       <div className="vc-title">{title}</div>
       {failed ? (
         <>
-          <div className="vc-failed">Structure fails</div>
-          <div className="vc-msg">{message}</div>
+          <div className="vc-failed">Breaks in year {breaksInYear ?? "—"}</div>
+          <div className="vc-msg">
+            Serviced itself for {survivedYears} {survivedYears === 1 ? "year" : "years"},
+            then ran out of liquidity. No exit, so no return is shown — a MOIC on a deal
+            that never reached an exit would be an invention.
+          </div>
         </>
       ) : (
         <div className="vc-nums">

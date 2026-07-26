@@ -65,10 +65,18 @@ export interface CaseColumn {
   note: string | null;
   failed: boolean;
   message: string | null;
+  /** The year the structure runs out of liquidity, when it does. */
+  breaks_in_year: number | null;
+  /** How many years it serviced itself before that. */
+  survived_years: number;
   irr: number | null;
   moic: number | null;
   wiped_out?: boolean;
   run: RunResult | null;
+  /** The schedule for the years it *did* survive. Present only on a break, and
+   *  deliberately carrying no IRR or MOIC — there was no exit in that year, and
+   *  printing a return for one would be an invention. */
+  partial_run: RunResult | null;
 }
 
 export interface CaseDetail extends CaseSummary {

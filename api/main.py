@@ -282,19 +282,61 @@ def schedule_csv(req: DealRequest) -> StreamingResponse:
 # runs in total and there is no reason to repeat them per request.
 
 
+def _survivable_years(a: Assumptions) -> int:
+    """The longest hold this structure can actually service.
+
+    A bare "the structure fails" is a dead end that reads like a defect. The
+    useful statement is *when* it breaks and how far it got, so the client can
+    show the schedule up to that point and the reader can see the liquidity
+    draining year by year. Cheap to compute: at most `hold_years` engine runs on
+    a deal we already know is small.
+    """
+    for years in range(a.hold_years - 1, 0, -1):
+        shorter = a.model_copy(deep=True)
+        shorter.hold_years = years
+        shorter.operating.revenue_growth = a.growth_schedule()[:years]
+        shorter.operating.ebitda_margin = a.margin_schedule()[:years]
+        try:
+            run_lbo(shorter)
+            return years
+        except ValueError:
+            continue
+    return 0
+
+
 def _replay(a: Assumptions) -> dict:
-    """Run one column. A structure the engine refuses to model is a *result*
-    here, not an error — TXU's realised path is supposed to fail, and reporting
-    that honestly is the entire point of including it."""
+    """Run one column.
+
+    A structure the engine refuses to model is a *result* here, not an error.
+    Rather than stopping at that, the failure is reported as a liquidity break:
+    the year it happens, the size of the shortfall, and a full schedule for the
+    years it did survive. That is what a credit committee would actually want —
+    "this breaks in year three" is information; "failed" is not.
+    """
     try:
         result = run_lbo(a)
     except ValueError as exc:
+        survived = _survivable_years(a)
+        partial = None
+        if survived > 0:
+            shorter = a.model_copy(deep=True)
+            shorter.hold_years = survived
+            shorter.operating.revenue_growth = a.growth_schedule()[:survived]
+            shorter.operating.ebitda_margin = a.margin_schedule()[:survived]
+            run = run_lbo(shorter)
+            credit = credit_stats(shorter).reset_index().to_dict(orient="records")
+            # Deliberately no IRR or MOIC on a partial run: there was no exit in
+            # that year, and printing a return for one would be a fabrication.
+            partial = run_out(run, check_assumptions(shorter), jsonable(credit))
         return {
             "failed": True,
             "message": str(exc),
+            "breaks_in_year": survived + 1,
+            "survived_years": survived,
             "irr": None,
             "moic": None,
             "run": None,
+            "partial_run": partial,
         }
 
     wiped = result.exit_equity <= 0
@@ -305,7 +347,10 @@ def _replay(a: Assumptions) -> dict:
         "irr": None if wiped else jsonable(sponsor_irr(result)),
         "moic": None if wiped else jsonable(result.moic),
         "wiped_out": wiped,
+        "breaks_in_year": None,
+        "survived_years": a.hold_years,
         "run": run_out(result, check_assumptions(a), jsonable(credit)),
+        "partial_run": None,
     }
 
 
