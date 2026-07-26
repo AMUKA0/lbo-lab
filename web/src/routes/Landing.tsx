@@ -39,6 +39,11 @@ const FEATURES = [
   },
   {
     no: "06",
+    title: "Four real deals, replayed",
+    body: "Hilton, HCA, TXU and RJR Nabisco, each reconstructed from information available before close and run through this engine — then run again on the operating path that actually happened. Every input is sourced and labelled reported, derived or estimated. Three of the eight runs refuse to produce a schedule, which is the finding rather than a fault.",
+  },
+  {
+    no: "07",
     title: "The lender's view",
     body: "Net leverage, interest coverage, (EBITDA − capex) coverage and FCF conversion by year, against the covenant conventions credit committees actually use. A structure that breaches them on paper doesn't get financed on those terms.",
   },
@@ -66,6 +71,9 @@ export function Landing() {
             <Link className="btn btn-primary" to="/simulator">
               Open the simulator →
             </Link>
+            <Link className="btn" to="/cases">
+              Case studies
+            </Link>
             <a className="btn" href="#methodology">
               Methodology ↓
             </a>
@@ -73,9 +81,9 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="74" k="tests · golden case solved by hand" />
+          <Stat v="100" k="tests · golden case solved by hand" />
+          <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
-          <Stat v="4" k="scenarios incl. recession stress" />
           <Stat v="1e-10" k="tolerance on the interest solve" />
         </div>
 

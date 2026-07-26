@@ -1,0 +1,349 @@
+/**
+ * One case study.
+ *
+ * The page is ordered as an argument, not as a dashboard. The thesis and the
+ * sourced inputs come first, so that by the time you reach a number you already
+ * know where it came from and how much weight it will bear. The comparison strip
+ * comes next. The outcome comes *after* the model's verdict, deliberately — the
+ * interesting question is what the numbers said before anyone knew the answer,
+ * and putting the answer at the top would destroy that.
+ *
+ * The last section is the one that matters most for credibility: where this
+ * engine structurally cannot follow the deal. Every case in the library has at
+ * least one, and none of them is closed by tuning an assumption.
+ */
+
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+
+import { fetchCase, type CaseColumn, type CaseDetail, type Figure } from "../api/cases";
+import { BridgeWaterfall, DebtPaydownChart, OperatingChart } from "../components/charts";
+import { Flags, KpiStrip } from "../components/Kpis";
+import { Card, SectionHead, Skeleton, Tabs } from "../components/primitives";
+import { BridgeTable, CreditTable, ScheduleTable, SourcesUsesTable } from "../components/tables";
+import { fmtMult, fmtPct, NA } from "../lib/format";
+
+type ColumnId = "underwriting" | "realised";
+
+const BASIS_NOTE: Record<Figure["basis"], string> = {
+  reported: "Appears in a filing, press release or contemporaneous report.",
+  derived: "Follows arithmetically from reported figures.",
+  estimated: "A judgement call. The reasoning is given alongside.",
+};
+
+function bn(millions: number | null | undefined): string {
+  if (millions === null || millions === undefined) return NA;
+  return `$${(millions / 1000).toFixed(1)}bn`;
+}
+
+export function CaseStudy() {
+  const { slug = "" } = useParams();
+  const [data, setData] = useState<CaseDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [column, setColumn] = useState<ColumnId>("underwriting");
+
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    setColumn("underwriting");
+    const controller = new AbortController();
+    fetchCase(slug, controller.signal)
+      .then(setData)
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Could not load the case.");
+      });
+    return () => controller.abort();
+  }, [slug]);
+
+  if (error) {
+    return (
+      <main className="landing">
+        <div className="notice notice-bad">{error}</div>
+        <Link className="btn" to="/cases">
+          ← Back to the library
+        </Link>
+      </main>
+    );
+  }
+  if (!data) {
+    return (
+      <main className="landing">
+        <Skeleton height={520} />
+      </main>
+    );
+  }
+
+  const active: CaseColumn | null = column === "underwriting" ? data.underwriting : data.realised;
+
+  return (
+    <>
+      <main className="landing case-page">
+        <Link className="back-link" to="/cases">
+          ← Case studies
+        </Link>
+
+        <header className="case-head">
+          <div className="eyebrow">
+            {data.sector} · signed {data.signed} · closed {data.closed}
+          </div>
+          <h1>{data.name}</h1>
+          <div className="case-sponsor">{data.sponsor}</div>
+          <div className="case-headline-stats">
+            <HeadStat k="Enterprise value" v={bn(data.entry_ev)} />
+            {/* In millions, not billions: this is the denominator of the entry
+                multiple, and "$1.7bn" would make that division uncheckable. */}
+            <HeadStat
+              k="Entry EBITDA"
+              v={`$${Math.round(data.entry_ebitda).toLocaleString("en-US")}m`}
+            />
+            <HeadStat k="Entry multiple" v={fmtMult(data.entry_multiple)} />
+            <HeadStat k="Leverage at close" v={`${data.leverage_turns.toFixed(1)}×`} />
+          </div>
+        </header>
+
+        <Card
+          title="The underwriting case"
+          note="Reconstructed from what was knowable before close. No outcome figure is used as an input."
+        >
+          <p className="prose">{data.thesis}</p>
+        </Card>
+
+        <SectionHead
+          title="The inputs, and where each one comes from"
+          eyebrow="Provenance"
+        />
+        <div className="provenance">
+          {data.provenance.map((f) => (
+            <div className="prov-row" key={f.label}>
+              <div className="prov-label">
+                <div className="pl-name">{f.label}</div>
+                <div className="pl-value">{f.value}</div>
+              </div>
+              <div className="prov-body">
+                <span className={`basis basis-${f.basis}`} title={BASIS_NOTE[f.basis]}>
+                  {f.basis}
+                </span>
+                <p>{f.note}</p>
+                {f.source && (
+                  <a className="prov-src" href={f.source.url} target="_blank" rel="noreferrer">
+                    {f.source.label} →
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <SectionHead
+          title="Model versus reality"
+          eyebrow="Three columns, three different questions"
+        />
+        <div className="verdict-strip">
+          <VerdictCard
+            title="Modelled — as signed"
+            sub="Pre-close information only. No hindsight."
+            irr={data.underwriting.irr}
+            moic={data.underwriting.moic}
+            years={data.underwriting.assumptions.hold_years}
+            failed={data.underwriting.failed}
+            message={data.underwriting.message}
+          />
+          <VerdictCard
+            title="Modelled — actual path"
+            sub="Same structure, fed the operating path that happened."
+            irr={data.realised?.irr ?? null}
+            moic={data.realised?.moic ?? null}
+            years={data.realised?.assumptions.hold_years}
+            failed={data.realised?.failed ?? false}
+            message={data.realised?.message ?? null}
+          />
+          <VerdictCard
+            title="What actually happened"
+            sub={data.outcome.exit_route}
+            irr={data.outcome.realised_irr}
+            moic={data.outcome.realised_moic}
+            years={data.outcome.holding_years}
+            failed={false}
+            message={null}
+            actual
+            confidence={data.outcome.confidence}
+          />
+        </div>
+
+        <Card title={data.outcome.headline} eyebrow={`Exited ${data.outcome.exit_year}`}>
+          <p className="prose">{data.outcome.narrative}</p>
+        </Card>
+
+        <SectionHead
+          title="The model, run in full"
+          eyebrow="Same engine as the simulator — nothing special-cased"
+        />
+        <Tabs
+          tabs={[
+            { id: "underwriting", label: "As signed" },
+            { id: "realised", label: "Actual operating path" },
+          ]}
+          active={column}
+          onChange={(id) => setColumn(id as ColumnId)}
+        />
+
+        {active?.note && <div className="column-note">{active.note}</div>}
+
+        {!active && (
+          <div className="notice">No realised path is modelled for this case.</div>
+        )}
+
+        {active?.failed && (
+          <div className="notice notice-bad">
+            <strong>The engine refuses to model this structure.</strong>
+            <div style={{ marginTop: "var(--s2)" }}>{active.message}</div>
+          </div>
+        )}
+
+        {active?.run && (
+          <>
+            <KpiStrip run={active.run} />
+            <Flags flags={active.run.flags} />
+
+            <div className="grid-2">
+              <Card
+                title="Value creation bridge"
+                eyebrow="Reconciles exactly"
+              >
+                <BridgeWaterfall bridge={active.run.bridge} />
+                <BridgeTable run={active.run} />
+              </Card>
+              <Card title="Sources & uses" eyebrow="Equity is the plug">
+                <SourcesUsesTable
+                  run={active.run}
+                  entryEbitda={active.assumptions.entry_ebitda}
+                />
+              </Card>
+            </div>
+
+            <div className="grid-2">
+              <Card title="Debt paydown" eyebrow="By tranche">
+                <DebtPaydownChart run={active.run} />
+              </Card>
+              <Card title="Operating build" eyebrow="Revenue & margin">
+                <OperatingChart run={active.run} />
+              </Card>
+            </div>
+
+            <Card title="Credit statistics" eyebrow="The lender's view">
+              <CreditTable credit={active.run.credit} />
+            </Card>
+
+            <Card
+              title="Annual schedule"
+              note="Line items down, years across — including the NOL roll-forward and the pass count of the interest solve."
+            >
+              <ScheduleTable run={active.run} />
+            </Card>
+          </>
+        )}
+
+        <SectionHead title="What they could not have known" eyebrow="Fair and unfair criticism" />
+        <Card>
+          <p className="prose">{data.could_not_have_known}</p>
+        </Card>
+
+        <SectionHead
+          title="Where this model cannot follow the deal"
+          eyebrow="Stated, not closed"
+        />
+        <ul className="caveat-list">
+          {data.model_caveats.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+
+        {data.sources.length > 0 && (
+          <>
+            <SectionHead title="Sources" eyebrow="For this case" />
+            <ul className="source-list">
+              {data.sources.map((s) => (
+                <li key={s.key}>
+                  <a href={s.url} target="_blank" rel="noreferrer">
+                    {s.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </main>
+
+      <footer className="site-footer">
+        <span>LBO Lab</span>
+        <span className="mute">
+          A reconstruction from public sources, not the sponsor's own model.
+        </span>
+        <Link to="/simulator" style={{ marginLeft: "auto" }}>
+          Open the simulator →
+        </Link>
+      </footer>
+    </>
+  );
+}
+
+function HeadStat({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="hs">
+      <div className="k">{k}</div>
+      <div className="v">{v}</div>
+    </div>
+  );
+}
+
+function VerdictCard({
+  title,
+  sub,
+  irr,
+  moic,
+  years,
+  failed,
+  message,
+  actual = false,
+  confidence,
+}: {
+  title: string;
+  sub: string;
+  irr: number | null;
+  moic: number | null;
+  years?: number;
+  failed: boolean;
+  message: string | null;
+  actual?: boolean;
+  confidence?: string;
+}) {
+  return (
+    <div className={`verdict-card${actual ? " is-actual" : ""}${failed ? " is-failed" : ""}`}>
+      <div className="vc-title">{title}</div>
+      {failed ? (
+        <>
+          <div className="vc-failed">Structure fails</div>
+          <div className="vc-msg">{message}</div>
+        </>
+      ) : (
+        <div className="vc-nums">
+          <div>
+            <div className="vc-k">IRR</div>
+            <div className="vc-v">{irr === null ? NA : fmtPct(irr)}</div>
+          </div>
+          <div>
+            <div className="vc-k">MOIC</div>
+            <div className="vc-v">{moic === null ? NA : fmtMult(moic, 2)}</div>
+          </div>
+          <div>
+            <div className="vc-k">Hold</div>
+            <div className="vc-v">{years === undefined ? NA : `${years}y`}</div>
+          </div>
+        </div>
+      )}
+      <div className="vc-sub">{sub}</div>
+      {confidence && <div className="vc-conf">Figures {confidence}</div>}
+    </div>
+  );
+}

@@ -41,7 +41,29 @@ The interactive API schema is at `/api/docs`.
 pytest
 ```
 
-74 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+100 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+
+## The case-study library
+
+Four real buyouts, replayed through the same engine: **Hilton** (Blackstone, 2007), **HCA** (KKR/Bain/MLGPE, 2006), **TXU** (KKR/TPG/GS, 2007) and **RJR Nabisco** (KKR, 1989). Two winners, one flat, one total loss — a set of four winners would teach nothing, and a test asserts the spread so a later edit can't quietly turn it into a highlight reel.
+
+Each case is modelled **twice**, on the same capital structure:
+
+| Column | Built from | Answers |
+|---|---|---|
+| **As signed** | Information available *before close* only — trailing trend, contemporaneous consensus, the banker ranges in the proxy. | What would this model have said at the time? |
+| **Actual operating path** | The same structure fed the revenue and margin path that actually occurred. | Does the engine reproduce reality when handed reality? |
+| **What happened** | Reported outcome, with a confidence label. | Not a model output, and styled so it can't be mistaken for one. |
+
+Every input carries provenance — **reported** (appears in a filing), **derived** (follows arithmetically), or **estimated** (a judgement call, with the reasoning given). Two tests enforce the no-hindsight claim rather than merely asserting it in prose: one fails if any case underwrites an exit multiple above its entry multiple (the commonest way hindsight smuggles itself in), another fails if the two columns differ in anything but the operating path and the exit.
+
+Three of the eight runs refuse to produce a schedule. That is the finding, not a defect:
+
+- **Hilton's realised path fails in year three.** Fed the RevPAR collapse that actually happened, cash interest exceeds EBITDA from 2009 and the revolver is exhausted by 2010 — which is precisely when Blackstone bought back ~$2bn of Hilton's debt for ~$800m and converted ~$2bn to preferred. The model identifies the restructuring from the numbers alone.
+- **RJR fails on its own underwriting.** Cash interest plus PIK accrual against $3.1bn of EBITDA leaves nothing for the mandatory amortisation. Historically exact: the deal only worked if the divestitures cleared, and the engine has no divestiture mechanic, so it says so by refusing to print.
+- **TXU underwrites at a low-double-digit IRR** and still lost $8.3bn. Nothing in the guardrails, the tornado or the sensitivity grid flags it, because every one of those varies inputs the model contains — and the input that destroyed the deal, the price of natural gas, was not one of them.
+
+Where the engine structurally cannot follow a deal — RJR's divestitures and preferred layer, HCA's dividend recaps and IPO dilution, TXU's gas hedges, Hilton's discounted debt buyback and staged sell-down — it is stated on the page rather than closed by tuning an assumption until the answer looks right.
 
 ## Methodology — and where it matches industry practice
 
@@ -102,16 +124,18 @@ api/
   main.py           # Routes. Granular, so the client pays only for the tab it's viewing
   serialisation.py  # Engine dataclasses → JSON-safe response models (NaN/inf → null)
   presets.py        # Default deal + the preset library
+  case_studies.py   # Four real deals: sourced inputs, both columns, caveats, outcomes
 web/src/
   api/              # Typed client, abortable + debounced fetch hooks
   components/       # Design-system primitives, charts, tables, the assumptions panel
-  routes/           # Landing, Simulator
+  routes/           # Landing, Simulator, Cases, CaseStudy
   styles/global.css # The design system in one file
 tests/
   conftest.py       # simple_deal (hand-computable golden case) + rich_deal (all features)
   test_engine.py    # Golden-case assertions to 1e-6 + invariants that must hold for any deal
   test_returns.py   # IRR solver against known closed-form answers
   test_api.py       # The transport contract
+  test_case_studies.py  # Replay contract + the no-hindsight guards
 ```
 
 ## Interface notes

@@ -1,5 +1,7 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 
+import { Cases } from "./routes/Cases";
+import { CaseStudy } from "./routes/CaseStudy";
 import { Landing } from "./routes/Landing";
 import { Simulator } from "./routes/Simulator";
 
@@ -28,6 +30,7 @@ export function App() {
             Overview
           </NavLink>
           <NavLink to="/simulator">Simulator</NavLink>
+          <NavLink to="/cases">Case studies</NavLink>
           <a
             href="/api/docs"
             target="_blank"
@@ -42,6 +45,8 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/simulator" element={<Simulator />} />
+        <Route path="/cases" element={<Cases />} />
+        <Route path="/cases/:slug" element={<CaseStudy />} />
       </Routes>
     </div>
   );

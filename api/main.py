@@ -35,6 +35,7 @@ from lbo_engine.analysis import (
 from lbo_engine.calibration import BENCHMARKS, check_assumptions
 from lbo_engine.returns import sponsor_irr
 
+from api.case_studies import BY_SLUG, CASES, SOURCES, CaseStudy
 from api.presets import PRESETS, default_deal
 from api.serialisation import RunOut, jsonable, run_out
 
@@ -268,6 +269,150 @@ def schedule_csv(req: DealRequest) -> StreamingResponse:
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="lbo-schedule.csv"'},
     )
+
+
+# ------------------------------------------------------------- case studies
+#
+# Four real buyouts replayed through the same engine. Each case is modelled
+# twice — once on assumptions reconstructed from pre-close information only, and
+# once on the operating path that actually occurred — so the client can show the
+# no-hindsight verdict and the model's own accuracy as two separate questions.
+#
+# The cases are static, so the replays are cached: the library is eight engine
+# runs in total and there is no reason to repeat them per request.
+
+
+def _replay(a: Assumptions) -> dict:
+    """Run one column. A structure the engine refuses to model is a *result*
+    here, not an error — TXU's realised path is supposed to fail, and reporting
+    that honestly is the entire point of including it."""
+    try:
+        result = run_lbo(a)
+    except ValueError as exc:
+        return {
+            "failed": True,
+            "message": str(exc),
+            "irr": None,
+            "moic": None,
+            "run": None,
+        }
+
+    wiped = result.exit_equity <= 0
+    credit = credit_stats(a).reset_index().to_dict(orient="records")
+    return {
+        "failed": False,
+        "message": None,
+        "irr": None if wiped else jsonable(sponsor_irr(result)),
+        "moic": None if wiped else jsonable(result.moic),
+        "wiped_out": wiped,
+        "run": run_out(result, check_assumptions(a), jsonable(credit)),
+    }
+
+
+def _outcome(case: CaseStudy) -> dict:
+    o = case.outcome
+    return {
+        "exit_route": o.exit_route,
+        "exit_year": o.exit_year,
+        "holding_years": o.holding_years,
+        "realised_moic": o.realised_moic,
+        "realised_irr": o.realised_irr,
+        "confidence": o.confidence,
+        "headline": o.headline,
+        "narrative": o.narrative,
+    }
+
+
+def _summary(case: CaseStudy) -> dict:
+    """The index-card view: enough to choose a case, not enough to need a run."""
+    a = case.underwriting
+    return {
+        "slug": case.slug,
+        "name": case.name,
+        "sponsor": case.sponsor,
+        "signed": case.signed,
+        "closed": case.closed,
+        "sector": case.sector,
+        "verdict": case.verdict,
+        "why_it_is_here": case.why_it_is_here,
+        "entry_ev": a.entry_ev,
+        "entry_ebitda": a.entry_ebitda,
+        "entry_multiple": a.entry_multiple,
+        "leverage_turns": a.total_leverage_turns,
+        "outcome": _outcome(case),
+    }
+
+
+@app.get("/api/cases")
+def cases() -> dict:
+    """The library index. No engine runs — the cards are chosen from, not read."""
+    return {
+        "cases": [_summary(c) for c in CASES],
+        "sources": [{"key": s.key, "label": s.label, "url": s.url} for s in SOURCES],
+    }
+
+
+@app.get("/api/cases/{slug}")
+def case_detail(slug: str) -> dict:
+    """One case, fully replayed.
+
+    Three columns reach the client and they answer three different questions:
+
+    * ``underwriting`` — what this model says about the deal as signed, using
+      only information available before close. The no-hindsight verdict.
+    * ``realised`` — the same capital structure fed the operating path that
+      actually happened. This is the model's own accuracy test: if the engine is
+      sound, reality in should give reality out.
+    * ``outcome`` — what the deal actually returned, as reported.
+
+    The distance between the first two is the deal's news. The distance between
+    the last two is the model's error, and ``model_caveats`` names the
+    structural reasons for it rather than tuning an assumption to close the gap.
+    """
+    case = BY_SLUG.get(slug)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"No case study with slug {slug!r}")
+
+    by_key = {s.key: s for s in SOURCES}
+    return {
+        **_summary(case),
+        "thesis": case.thesis,
+        "could_not_have_known": case.could_not_have_known,
+        "model_caveats": case.model_caveats,
+        "provenance": [
+            {
+                "label": f.label,
+                "value": f.value,
+                "basis": f.basis,
+                "note": f.note,
+                "source": (
+                    {"key": f.source, "label": by_key[f.source].label, "url": by_key[f.source].url}
+                    if f.source in by_key
+                    else None
+                ),
+            }
+            for f in case.provenance
+        ],
+        "sources": [
+            {"key": k, "label": by_key[k].label, "url": by_key[k].url}
+            for k in case.source_keys
+            if k in by_key
+        ],
+        "underwriting": {
+            "assumptions": case.underwriting.model_dump(),
+            "note": case.column_notes.get("underwriting"),
+            **_replay(case.underwriting),
+        },
+        "realised": (
+            {
+                "assumptions": case.realised.model_dump(),
+                "note": case.column_notes.get("realised"),
+                **_replay(case.realised),
+            }
+            if case.realised is not None
+            else None
+        ),
+    }
 
 
 # ---------------------------------------------------------------- static SPA
