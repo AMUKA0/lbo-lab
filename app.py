@@ -12,7 +12,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from lbo_engine import Assumptions, DebtTranche, OperatingAssumptions, RevolverAssumptions, run_lbo
-from lbo_engine.analysis import debt_paydown_table, entry_exit_sensitivity
+from lbo_engine.analysis import (
+    breakeven_exit_multiple,
+    debt_paydown_table,
+    entry_exit_sensitivity,
+    scenario_set,
+    tornado,
+)
+from lbo_engine.calibration import check_assumptions
 from lbo_engine.returns import returns_bridge, sponsor_irr
 
 st.set_page_config(page_title="LBO Lab", page_icon="📈", layout="wide")
@@ -101,6 +108,14 @@ if abs(implied - entry_ebitda) / entry_ebitda > 0.15:
         "driven by revenue × margin, so entry EBITDA only sizes the cheque and the debt."
     )
 
+# Guardrails: plausibility flags against published market benchmarks.
+for flag in check_assumptions(assumptions):
+    text = f"{flag.message}  \n*Source: {flag.source}*"
+    if flag.level == "amber":
+        st.warning(text, icon="⚠️")
+    else:
+        st.info(text, icon="ℹ️")
+
 try:
     result = run_lbo(assumptions)
 except ValueError as exc:
@@ -176,6 +191,76 @@ with right:
         xaxis_title="Year", yaxis_title="Balance",
     )
     st.plotly_chart(fig2, use_container_width=True)
+
+# ---------------------------------------------------------------- tornado + scenarios
+left, right = st.columns(2)
+
+with left:
+    st.subheader("Tornado: what actually moves the IRR")
+    torn = tornado(assumptions)
+    base_irr_pct = torn["base_irr"].iloc[0] * 100
+    fig3 = go.Figure()
+    drivers = torn.index.tolist()[::-1]  # widest bar on top
+    fig3.add_trace(go.Bar(
+        y=drivers,
+        x=[(torn.loc[d, "low_irr"] * 100) - base_irr_pct for d in drivers],
+        base=base_irr_pct, orientation="h", name="Downside",
+        marker_color="#c0653c",
+    ))
+    fig3.add_trace(go.Bar(
+        y=drivers,
+        x=[(torn.loc[d, "high_irr"] * 100) - base_irr_pct for d in drivers],
+        base=base_irr_pct, orientation="h", name="Upside",
+        marker_color="#1f7a51",
+    ))
+    fig3.add_vline(x=base_irr_pct, line_width=1, line_dash="dash")
+    fig3.update_layout(
+        height=380, margin=dict(l=10, r=10, t=10, b=10), barmode="overlay",
+        xaxis_title="Sponsor IRR %", legend=dict(orientation="h", y=-0.25),
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+    st.caption("One driver moved at a time, all else held. Ranked widest first.")
+
+with right:
+    st.subheader("Scenarios")
+    rows = []
+    for name, variant in scenario_set(assumptions).items():
+        try:
+            res = run_lbo(variant)
+            rows.append({
+                "scenario": name,
+                "IRR": f"{sponsor_irr(res):.1%}",
+                "MOIC": f"{res.moic:.2f}×",
+                "peak revolver": f"{max(r.revolver_closing for r in res.years):,.0f}",
+                "exit net debt": f"{res.exit_net_debt:,.0f}",
+            })
+        except ValueError:
+            rows.append({
+                "scenario": name, "IRR": "fails", "MOIC": "—",
+                "peak revolver": "exhausted", "exit net debt": "—",
+            })
+    st.table(rows)
+    st.caption(
+        "Upside/downside: ±200bps growth, ±100bps margin, ±0.5–1.0× exit. "
+        "Recession: EBITDA −20% in years 1–2 with recovery, exit −1.5×. "
+        "A V-shaped recession can beat the permanent downside — terminal "
+        "EBITDA recovers; a downgrade compounds into the exit."
+    )
+
+    st.subheader("Breakeven")
+    target = st.select_slider("Target IRR", options=[0.15, 0.20, 0.25, 0.30], value=0.20,
+                              format_func=lambda v: f"{v:.0%}")
+    be = breakeven_exit_multiple(assumptions, target)
+    if math.isnan(be):
+        st.metric(f"Exit multiple needed for {target:.0%} IRR", "unreachable")
+    else:
+        delta = be - entry_multiple
+        st.metric(
+            f"Exit multiple needed for {target:.0%} IRR",
+            f"{be:.2f}×",
+            f"{delta:+.2f}× vs entry",
+            delta_color="inverse",
+        )
 
 # ---------------------------------------------------------------- sensitivity
 st.subheader("Sensitivity: IRR across entry × exit multiple")
