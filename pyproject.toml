@@ -14,8 +14,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4"]
-app = ["streamlit>=1.30", "plotly>=5.18"]
+dev = ["pytest>=7.4", "httpx2"]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+# The original local lab. Superseded by the React client, kept so the engine
+# stays provably decoupled from any one front end.
+streamlit = ["streamlit>=1.30", "plotly>=5.18"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

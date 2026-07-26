@@ -1,0 +1,292 @@
+"""LBO Lab HTTP API.
+
+A thin transport layer over `lbo_engine`. Deliberately thin: no financial logic
+lives here. Every endpoint validates an `Assumptions` payload (the engine's own
+Pydantic contract, so the API schema and the model can never drift apart), calls
+the same functions the test suite exercises, and serialises the result.
+
+Endpoints are granular rather than one fat "analyse everything" call, because
+the client only pays for the tab it is looking at — the sensitivity grid is ~25
+engine runs and there is no reason to compute it while the user reads the debt
+schedule.
+"""
+
+from __future__ import annotations
+
+import io
+import math
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from lbo_engine import Assumptions, run_lbo
+from lbo_engine.analysis import (
+    breakeven_exit_multiple,
+    credit_stats,
+    entry_exit_sensitivity,
+    exit_year_profile,
+    scenario_set,
+    tornado,
+)
+from lbo_engine.calibration import BENCHMARKS, check_assumptions
+from lbo_engine.returns import sponsor_irr
+
+from api.presets import PRESETS, default_deal
+from api.serialisation import RunOut, jsonable, run_out
+
+app = FastAPI(
+    title="LBO Lab API",
+    version="1.0.0",
+    # Kept under /api so the SPA catch-all below can own every other path, and
+    # so the interactive schema survives being served from the same origin.
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    description=(
+        "Deal-level leveraged-buyout modelling. Multi-tranche debt schedule, "
+        "cash sweep, the interest circularity solved iteratively, calibration "
+        "guardrails, stress testing and attribution."
+    ),
+)
+
+# The SPA is served from a different origin in development (Vite on :5173).
+# In production the static build is served by this same app, so this is a
+# development affordance rather than a permanent hole.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --------------------------------------------------------------- request bodies
+
+class SensitivityRequest(BaseModel):
+    assumptions: Assumptions
+    entry_multiples: list[float] | None = None
+    exit_multiples: list[float] | None = None
+    steps: int = Field(default=5, ge=3, le=11, description="Grid size when multiples are auto-generated")
+    span: float = Field(default=2.0, gt=0, le=6, description="Turns either side of the deal's own multiples")
+
+
+class DealRequest(BaseModel):
+    assumptions: Assumptions
+
+
+class BreakevenRequest(BaseModel):
+    assumptions: Assumptions
+    target_irr: float = Field(default=0.20, gt=-0.99, lt=5.0)
+
+
+def _fail(exc: ValueError) -> HTTPException:
+    """The engine refuses to print a broken structure. Neither do we — but the
+    client needs the reason, not a generic 500, so it can render it as a finding
+    rather than a crash."""
+    return HTTPException(
+        status_code=422,
+        detail={"kind": "structure_failure", "message": str(exc)},
+    )
+
+
+def _grid(centre: float, steps: int, span: float) -> list[float]:
+    step = (2 * span) / (steps - 1)
+    return [round(centre - span + i * step, 4) for i in range(steps)]
+
+
+# -------------------------------------------------------------------- metadata
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.get("/api/defaults")
+def defaults() -> dict:
+    """Everything the client needs to boot: a runnable deal, the preset library,
+    and the benchmark bands behind the guardrails (so the UI can show the band
+    next to each slider instead of only complaining after the fact)."""
+    return {
+        "assumptions": default_deal().model_dump(),
+        "presets": PRESETS,
+        "benchmarks": jsonable(BENCHMARKS),
+    }
+
+
+# ------------------------------------------------------------------- core run
+
+@app.post("/api/run", response_model=RunOut)
+def run(req: DealRequest) -> RunOut:
+    """One deal, fully modelled: sources & uses, the complete annual schedule
+    with per-tranche detail, exit, returns, the value bridge and credit stats."""
+    a = req.assumptions
+    try:
+        result = run_lbo(a)
+    except ValueError as exc:
+        raise _fail(exc) from exc
+
+    credit = credit_stats(a).reset_index().to_dict(orient="records")
+    return run_out(result, check_assumptions(a), jsonable(credit))
+
+
+@app.post("/api/sensitivity")
+def sensitivity(req: SensitivityRequest) -> dict:
+    """IRR across entry multiple (rows) × exit multiple (columns).
+
+    Changing the entry multiple re-levers the deal — debt is sized in turns of
+    EBITDA, so a richer price means a bigger cheque, not more debt.
+    """
+    a = req.assumptions
+    entries = req.entry_multiples or _grid(a.entry_multiple, req.steps, req.span)
+    exits = req.exit_multiples or _grid(a.exit_multiple, req.steps, req.span)
+    entries = [m for m in entries if m > 0]
+    exits = [m for m in exits if m > 0]
+
+    df = entry_exit_sensitivity(a, entries, exits)
+    return {
+        "entry_multiples": entries,
+        "exit_multiples": exits,
+        # Row-major: values[i][j] is entry_multiples[i] × exit_multiples[j].
+        # null where the structure fails or the sponsor is wiped out.
+        "values": jsonable(df.values.tolist()),
+    }
+
+
+@app.post("/api/tornado")
+def tornado_endpoint(req: DealRequest) -> dict:
+    """One-at-a-time driver swings, ranked by the width of the IRR span."""
+    df = tornado(req.assumptions).reset_index()
+    return {"drivers": jsonable(df.to_dict(orient="records"))}
+
+
+@app.post("/api/scenarios")
+def scenarios(req: DealRequest) -> dict:
+    """Base / upside / downside / recession, run side by side.
+
+    Each case reports whether the structure survived, not just its IRR — a case
+    that breaks the capital structure is the finding, and reporting only the
+    cases that happened to compute would hide exactly the ones that matter.
+    """
+    out = []
+    for name, variant in scenario_set(req.assumptions).items():
+        record: dict = {"name": name, "failed": False, "message": None}
+        try:
+            result = run_lbo(variant)
+            wiped = result.exit_equity <= 0
+            last = result.years[-1]
+            coverage = [
+                y.ebitda / y.cash_interest_total
+                for y in result.years
+                if y.cash_interest_total > 0
+            ]
+            record.update(
+                {
+                    "irr": None if wiped else sponsor_irr(result),
+                    "moic": None if wiped else result.moic,
+                    "entry_equity": result.entry_equity,
+                    "exit_equity": result.exit_equity,
+                    "exit_ebitda": result.exit_ebitda,
+                    "exit_multiple": variant.exit_multiple,
+                    "exit_net_leverage": (
+                        result.exit_net_debt / last.ebitda if last.ebitda else None
+                    ),
+                    "min_interest_coverage": min(coverage) if coverage else None,
+                    "wiped_out": wiped,
+                }
+            )
+        except ValueError as exc:
+            record.update(
+                {
+                    "failed": True,
+                    "message": str(exc),
+                    "irr": None,
+                    "moic": None,
+                    "entry_equity": None,
+                    "exit_equity": None,
+                    "exit_ebitda": None,
+                    "exit_multiple": variant.exit_multiple,
+                    "exit_net_leverage": None,
+                    "min_interest_coverage": None,
+                    "wiped_out": True,
+                }
+            )
+        out.append(jsonable(record))
+    return {"scenarios": out}
+
+
+@app.post("/api/exit-profile")
+def exit_profile(req: DealRequest) -> dict:
+    """IRR and MOIC by exit year: deleveraging compounds MOIC while
+    annualisation drags IRR — the hold-longer-versus-flip tension, shown."""
+    df = exit_year_profile(req.assumptions).reset_index()
+    return {"years": jsonable(df.to_dict(orient="records"))}
+
+
+@app.post("/api/breakeven")
+def breakeven(req: BreakevenRequest) -> dict:
+    """The model in reverse: the exit multiple that clears a target IRR.
+
+    The gap between that and the entry multiple is the honest question — how
+    much of the return are you asking the market to hand you?
+    """
+    a = req.assumptions
+    value = breakeven_exit_multiple(a, req.target_irr)
+    reachable = not math.isnan(value)
+    return {
+        "target_irr": req.target_irr,
+        "breakeven_exit_multiple": value if reachable else None,
+        "entry_multiple": a.entry_multiple,
+        "assumed_exit_multiple": a.exit_multiple,
+        "expansion_required": (value - a.entry_multiple) if reachable else None,
+        "reachable": reachable,
+    }
+
+
+@app.post("/api/schedule.csv")
+def schedule_csv(req: DealRequest) -> StreamingResponse:
+    """The annual schedule as CSV — the format anyone reviewing this will
+    immediately paste into Excel to check the maths."""
+    try:
+        result = run_lbo(req.assumptions)
+    except ValueError as exc:
+        raise _fail(exc) from exc
+
+    buffer = io.StringIO()
+    result.to_dataframe().to_csv(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="lbo-schedule.csv"'},
+    )
+
+
+# ---------------------------------------------------------------- static SPA
+#
+# In development the SPA is served by Vite and proxies /api here. In production
+# there is one process: `npm run build --prefix web` emits web/dist, and this
+# app serves it. Mounted last so it can never shadow an /api route.
+
+_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str) -> FileResponse:
+        """Serve built files directly; fall back to index.html so client-side
+        routes like /simulator survive a hard refresh."""
+        candidate = (_DIST / full_path).resolve()
+        # Containment check: a crafted path must not escape the dist directory.
+        if full_path and _DIST in candidate.parents and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_DIST / "index.html")

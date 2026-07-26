@@ -13,3 +13,8 @@ htmlcov/
 .vscode/
 *.xlsx
 !tests/golden/*.xlsx
+
+# web client
+node_modules/
+web/dist/
+*.tsbuildinfo

@@ -1,6 +1,47 @@
-# LBO Engine
+# LBO Lab
 
-A pure, deterministic, deal-level leveraged-buyout model in Python. Assumptions in, fully populated model out — no I/O, no state. This is Phase 1 of the LBO Simulator project: the maths that everything else (calibration layer, case-study library, web UI) sits on top of.
+A deal-level leveraged-buyout model with a web interface. Three layers, deliberately separated:
+
+| Layer | What it is | Why it's separate |
+|---|---|---|
+| `src/lbo_engine/` | A pure, deterministic Python model. Assumptions in, fully populated model out — no I/O, no state. | The maths is testable in isolation and can never be accidentally coupled to a front end. |
+| `api/` | A thin FastAPI transport over the engine. **No financial logic lives here.** | The request contract *is* the engine's own Pydantic model, so the API schema and the model cannot drift apart. |
+| `web/` | A React + TypeScript client (Vite, Recharts). | The interface can be rebuilt without touching a single tested calculation. |
+
+A Streamlit app (`Home.py`, `pages/`) remains in the repo as the original local lab. It calls the same engine, which is the point: two independent front ends, one tested model.
+
+## Running it
+
+```bash
+pip install -e ".[dev,api]"
+npm install --prefix web
+```
+
+Development — two processes, with Vite proxying `/api` to the backend:
+
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+```bash
+npm run dev --prefix web
+```
+
+Production — one process. FastAPI serves the built SPA, with a catch-all that falls back to `index.html` so client-side routes survive a hard refresh:
+
+```bash
+npm run build --prefix web && uvicorn api.main:app --port 8000
+```
+
+The interactive API schema is at `/api/docs`.
+
+## Test suite
+
+```bash
+pytest
+```
+
+74 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Methodology — and where it matches industry practice
 
@@ -55,11 +96,33 @@ src/lbo_engine/
   sources_uses.py   # Entry: S&U with equity as the plug
   engine.py         # The year loop: operating build, iterative interest solve, waterfall
   returns.py        # IRR (bisection), MOIC, value-creation bridge
+  analysis.py       # Sensitivity, tornado, scenarios, credit stats, exit timing, breakeven
+  calibration.py    # Market-range guardrails with cited sources
+api/
+  main.py           # Routes. Granular, so the client pays only for the tab it's viewing
+  serialisation.py  # Engine dataclasses → JSON-safe response models (NaN/inf → null)
+  presets.py        # Default deal + the preset library
+web/src/
+  api/              # Typed client, abortable + debounced fetch hooks
+  components/       # Design-system primitives, charts, tables, the assumptions panel
+  routes/           # Landing, Simulator
+  styles/global.css # The design system in one file
 tests/
   conftest.py       # simple_deal (hand-computable golden case) + rich_deal (all features)
   test_engine.py    # Golden-case assertions to 1e-6 + invariants that must hold for any deal
   test_returns.py   # IRR solver against known closed-form answers
+  test_api.py       # The transport contract
 ```
+
+## Interface notes
+
+The client is not a thin wrapper around the endpoints; a few decisions carry weight:
+
+- **`null` is never rendered as zero.** A failed structure, a wiped-out sponsor and infinite coverage all arrive as `null` and render as an em-dash or an empty heat-map cell. A fabricated number in a sensitivity grid is worse than a blank, because it looks like an answer.
+- **Guardrail bands are drawn on the sliders**, so you can see that you are dragging out of the market as you do it, rather than being told afterwards.
+- **The heat-map ramp is anchored to a fixed hurdle**, not to the range of the data — a relative ramp would repaint the same IRR a different colour as the deal changed, which teaches the eye nothing.
+- **Heavy analyses are gated on their tab.** The sensitivity grid is ~25 engine runs; dragging a slider on the Overview tab costs exactly one.
+- **The annual schedule is laid out line-items-down, years-across** — the orientation the model would take in Excel — and hides nothing, including the NOL roll-forward and the pass count of the interest solve.
 
 ## Quick start
 
