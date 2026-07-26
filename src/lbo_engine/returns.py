@@ -10,7 +10,7 @@ the fee drag, using the conventional attribution:
   EBITDA growth       = (exit EBITDA − entry EBITDA) × entry multiple
   Multiple expansion  = (exit multiple − entry multiple) × exit EBITDA
   Deleveraging        = entry net debt − exit net debt
-  Fee drag            = −(transaction fees + financing fees)
+  Fee drag            = −(transaction fees + financing fees + exit fees)
 
 These four terms sum EXACTLY to (exit equity − entry equity) — an identity the
 test suite asserts. (The growth/multiple split has a known convention choice:
@@ -69,7 +69,7 @@ def returns_bridge(r: LBOResult) -> ReturnsBridge:
         ebitda_growth=(r.exit_ebitda - a.entry_ebitda) * a.entry_multiple,
         multiple_expansion=(a.exit_multiple - a.entry_multiple) * r.exit_ebitda,
         deleveraging=r.entry_net_debt - r.exit_net_debt,
-        fee_drag=-(su.transaction_fees + su.financing_fees),
+        fee_drag=-(su.transaction_fees + su.financing_fees + r.exit_fees),
         entry_equity=r.entry_equity,
         exit_equity=r.exit_equity,
     )

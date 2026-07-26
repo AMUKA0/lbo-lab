@@ -43,7 +43,7 @@ with cta2:
 st.markdown(
     """
     <div class="stat-strip">
-      <div class="stat-cell"><div class="v">40</div><div class="k">tests · golden model to 1e-6</div></div>
+      <div class="stat-cell"><div class="v">58</div><div class="k">tests · golden model to 1e-6</div></div>
       <div class="stat-cell"><div class="v">7</div><div class="k">drivers in the tornado</div></div>
       <div class="stat-cell"><div class="v">4</div><div class="k">scenarios incl. recession stress</div></div>
       <div class="stat-cell"><div class="v">±2×</div><div class="k">entry / exit sensitivity grid</div></div>
@@ -58,9 +58,9 @@ section("What the lab does", "Built like the models funds actually run")
 FEATURES = [
     ("01", "The engine, done properly",
      "Sources & uses with equity as the plug, a multi-tranche debt schedule with mandatory "
-     "amortisation and a senior-first cash sweep, PIK accretion, a revolver for shortfalls — "
-     "and the interest ↔ balance circularity resolved by an iterative solve, the way Excel's "
-     "iterative mode does it."),
+     "amortisation and a senior-first cash sweep, PIK accretion, NOL carryforwards under the "
+     "80% limitation, a revolver for shortfalls — and the interest ↔ balance circularity "
+     "resolved by an iterative solve, the way Excel's iterative mode does it."),
     ("02", "Value-creation bridge",
      "Every outcome decomposed into the three drivers an investment committee actually argues "
      "about — EBITDA growth, multiple expansion, deleveraging — plus the fee drag. The bridge "
@@ -77,9 +77,10 @@ FEATURES = [
      "A breakeven solver: name a target IRR and the lab bisects for the exit multiple that "
      "clears it. The distance between that and your entry multiple is how much of your "
      "return you are asking the market to hand you."),
-    ("06", "Failure shown honestly",
-     "When the revolver is exhausted the structure fails loudly — no smoothed-over numbers. "
-     "Sensitivity cells where the sponsor is wiped out show as dashes, not fabricated IRRs."),
+    ("06", "The lender's view",
+     "Net leverage, interest coverage, (EBITDA − capex) coverage and FCF conversion by year, "
+     "against the covenant conventions credit committees actually use. A structure that "
+     "breaches them on paper doesn't get financed on those terms."),
 ]
 
 for row_start in (0, 3):
@@ -102,18 +103,18 @@ with m1:
     st.markdown(
         """
 - **Entry** — cash-free / debt-free; EV = EBITDA × entry multiple; sponsor equity is the plug.
-- **Interest** — charged on the average of opening and closing balances; the circularity is resolved iteratively each year to a 1e-10 tolerance, with the pass count shown in the UI.
+- **Interest** — on the average of opening and closing balances, the advanced-model convention; the circularity is resolved iteratively each year to a 1e-10 tolerance, with the pass count shown in the UI. A circularity-breaker toggle switches to opening-balance-only, the escape hatch bank models ship.
 - **Waterfall** — mandatory amortisation (% of *original* principal, term-loan convention) → revolver repayment → cash sweep, senior-first, sweepable tranches only.
-- **Taxes** — on EBT after all deductible interest and fee amortisation, floored at zero in loss years.
+- **Taxes** — on EBT after all deductible interest and fee amortisation; losses carry forward as NOLs sheltering up to 80% of later income (post-TCJA §172(a)).
         """
     )
 with m2:
     st.markdown(
         """
-- **Exit** — exit multiple × terminal EBITDA, less net debt; sponsor equity floored at zero (limited liability).
-- **Returns** — MOIC and bisection IRR on the sponsor's flows; the value bridge reconciles exactly.
-- **Simplifications, documented** — no NOL carryforwards, annual periodicity, no dividend recaps, fixed rates. Stated openly, because pretending they don't exist is how models lie.
-- **Verification** — the golden test case is solved *by hand* from the closed form of the circularity, independent of the engine.
+- **Fees** — financing fees amortise over the *facility tenor* per ASC 835-30, not the hold; sale-process costs come out of exit proceeds.
+- **Exit** — exit multiple × terminal EBITDA, less net debt and exit fees; sponsor equity floored at zero (limited liability).
+- **Returns** — MOIC and bisection IRR on the sponsor's flows; the value bridge reconciles exactly, and credit stats cover the lender's view.
+- **Simplifications, documented** — annual periodicity, fixed rates, no dividend recaps or management rollover. Listed with their consequences in the README, because pretending they don't exist is how models lie.
         """
     )
 

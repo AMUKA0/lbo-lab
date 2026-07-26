@@ -74,9 +74,20 @@ class Assumptions(BaseModel):
     # Capital structure
     tranches: list[DebtTranche] = Field(min_length=1, description="In order of seniority, most senior first")
     revolver: RevolverAssumptions = RevolverAssumptions()
-    # Fees (capitalised at close; financing fees amortise straight-line over the hold)
+    # Fees. Financing fees are capitalised at close and amortised straight-line
+    # over the DEBT'S TENOR (ASC 835-30 convention), not the hold period.
     transaction_fee_pct_ev: float = Field(default=0.0, ge=0, lt=0.1, description="Advisory/legal fees as % of EV")
     financing_fee_pct_debt: float = Field(default=0.0, ge=0, lt=0.1, description="OID/arrangement fees as % of funded debt")
+    financing_fee_tenor_years: int = Field(default=7, ge=1, le=10, description="Facility tenor over which financing fees amortise")
+    exit_fee_pct_ev: float = Field(default=0.0, ge=0, lt=0.05, description="Sale-process costs at exit, % of exit EV, deducted from proceeds")
+    # Tax attributes: losses carry forward and offset up to `nol_limit_pct` of a
+    # later year's positive pre-tax income (80% is the post-TCJA US rule; set 0 to disable).
+    nol_limit_pct: float = Field(default=0.8, ge=0, le=1)
+    # The industry "circularity breaker". True = interest on the average of
+    # opening and closing balances (correct, circular, solved iteratively).
+    # False = interest on the opening balance only (approximate but acyclic) —
+    # the toggle every bank model ships to stabilise a broken workbook.
+    interest_on_average_balance: bool = Field(default=True)
     # Cash policy
     minimum_cash: float = Field(default=0.0, ge=0, description="Operating cash floor, funded in Uses at close")
     cash_sweep_pct: float = Field(default=1.0, ge=0, le=1, description="% of excess FCF applied to optional prepayment")

@@ -42,10 +42,40 @@ _CSS = f"""
   --mono: 'IBM Plex Mono', Consolas, monospace;
 }}
 
-/* ---- strip Streamlit chrome ---- */
-#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {{ display: none; }}
+/* ---- strip Streamlit chrome (but never the sidebar toggle) ---- */
+#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stMainMenu"] {{ display: none; }}
 [data-testid="stHeader"] {{ background: transparent; }}
 .block-container {{ padding-top: 2.2rem; max-width: 1200px; }}
+
+/* the reopen-sidebar chevron must always be visible and obviously clickable */
+[data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"] {{
+  display: flex !important; visibility: visible !important;
+  background: {RAISE_BG}; border: 1px solid {PINE};
+  border-radius: 8px; z-index: 1000;
+}}
+[data-testid="stSidebarCollapsedControl"] svg, [data-testid="stSidebarCollapsedControl"] button,
+[data-testid="stExpandSidebarButton"] svg {{
+  color: {PINE} !important; fill: {PINE} !important;
+}}
+
+/* ---- tabs (Streamlit renders these as div[role="tab"]) ---- */
+[role="tablist"] {{ gap: 0.4rem; border-bottom: 1px solid var(--edge); }}
+[role="tab"] {{
+  font-family: var(--mono) !important; font-size: 0.74rem !important;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--faint) !important; background: transparent;
+  padding: 0.6rem 1.05rem !important; transition: color 0.15s ease;
+}}
+html body [data-testid="stTab"] p, html body [role="tab"] p {{
+  font-family: var(--mono) !important; font-size: 0.74rem !important;
+  letter-spacing: 0.12em !important; text-transform: uppercase !important;
+  color: inherit !important; margin: 0 !important;
+}}
+[role="tab"]:hover {{ color: var(--soft) !important; }}
+[role="tab"][aria-selected="true"] {{ color: var(--pine) !important; }}
+[role="tab"][aria-selected="true"] p {{ color: var(--pine) !important; font-weight: 600; }}
+[data-baseweb="tab-highlight"] {{ background-color: var(--pine) !important; }}
+[data-baseweb="tab-border"] {{ background-color: var(--edge) !important; }}
 
 /* ---- typography ---- */
 h1, h2, h3 {{ font-family: var(--serif) !important; letter-spacing: -0.01em; }}

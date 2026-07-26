@@ -10,29 +10,42 @@ The engine follows standard sponsor-model conventions throughout:
 |---|---|
 | **Entry** | Cash-free / debt-free purchase. Entry EV = entry EBITDA × entry multiple. Existing debt refinanced at close; minimum operating cash funded in Uses. |
 | **Sources & Uses** | Debt sized in turns of EBITDA per tranche; **sponsor equity is the plug** (Uses − total debt). Transaction fees on EV; financing fees (OID/arrangement) on funded debt. |
-| **Financing fees** | Capitalised at close and amortised straight-line over the hold; the amortisation is non-cash and tax-deductible. |
-| **Interest** | Charged on the **average of opening and closing balances**. Since closing balances depend on the cash sweep, which depends on interest, this is circular — resolved by an **iterative solve within each year** (seed with interest on opening balances; recompute until the total charge converges below 1e-10). This mirrors Excel's iterative-calculation mode. |
+| **Financing fees** | Capitalised at close and amortised straight-line over the **facility tenor** (ASC 835-30 debt-issuance-cost treatment), not the hold — so on a 5-year hold of a 7-year facility, part of the fee is never expensed pre-exit. Non-cash and tax-deductible. |
+| **Interest** | Charged on the **average of opening and closing balances** — the advanced-model convention, since opening-only overstates interest and closing-only understates it. That makes the model circular (interest → cash → sweep → balances → interest), resolved by an **iterative solve within each year** to a 1e-10 tolerance, mirroring Excel's iterative-calculation mode. A **circularity-breaker toggle** switches to opening-balance-only (acyclic, approximate) — the same escape hatch bank models ship. |
 | **PIK interest** | Accrues on the opening balance and accretes to principal; non-cash and tax-deductible. |
-| **Taxes** | On EBT (after all deductible interest and fee amortisation), floored at zero in loss years. |
+| **Taxes** | On EBT (after all deductible interest and fee amortisation). Losses carry forward as **NOLs and shelter up to 80% of later pre-tax income** (post-TCJA §172(a)); the limitation is configurable. |
+| **Exit costs** | Sale-process fees (banker, legal) as a % of exit EV, deducted from proceeds — the exit side of the fee drag that many teaching models omit. |
 | **Cash flow** | Net income + D&A + fee amortisation + PIK − capex − ΔNWC = cash available for debt service. ΔNWC = NWC % of revenue × change in revenue. |
 | **Debt waterfall** | 1) Mandatory amortisation (% of **original** principal — term-loan convention), 2) revolver repayment, 3) optional prepayment: the sweep % of remaining excess cash, applied **senior-first** to sweepable tranches. Shortfalls draw the revolver; if the revolver is exhausted the model fails loudly rather than printing a broken structure. |
 | **Exit** | Exit EV = exit multiple × terminal EBITDA; exit equity = EV − net debt (floored at zero — limited liability). |
 | **Returns** | MOIC = exit equity / equity cheque. IRR by bisection on the sponsor's cash-flow vector. |
-| **Attribution** | The value-creation bridge — (ΔEBITDA × entry multiple) + (Δmultiple × exit EBITDA) + net-debt paydown − fees — **sums exactly to the equity gain**; the test suite asserts the identity. The ΔEBITDA×Δmultiple cross term sits in the multiple line (the most common convention). |
+| **Credit stats** | Net leverage, EBITDA/interest and (EBITDA−capex)/interest coverage, and FCF conversion by year — the covenant-style ratios a credit committee actually watches. |
+| **Attribution** | The value-creation bridge — (ΔEBITDA × entry multiple) + (Δmultiple × exit EBITDA) + net-debt paydown − all fees — **sums exactly to the equity gain**; the test suite asserts the identity. The ΔEBITDA×Δmultiple cross term sits in the multiple line (the most common convention). |
 
-## Documented simplifications (v1)
+### Sources consulted
 
-Stated openly, because pretending they don't exist is how models lie:
+Conventions above were checked against: [Wall Street Prep on financing-fee accounting (ASC 835-30)](https://www.wallstreetprep.com/knowledge/debt-accounting-treatment-financing-fees/), [Macabacus on LBO transaction and financing fees](https://macabacus.com/lbo-model/fees-and-expenses), [Corporate Finance Institute's LBO model and credit-metrics overview](https://corporatefinanceinstitute.com/resources/financial-modeling/lbo-model/), [Street of Walls' LBO modelling test](https://www.streetofwalls.com/finance-training-courses/private-equity-training/lbo-modeling-test-example/), and Wall Street Oasis practitioner threads on [circular references in LBO models](https://www.wallstreetoasis.com/forum/private-equity/circular-references-in-lbo-models) and [fee treatment](https://www.wallstreetoasis.com/forum/private-equity/lbo-model-how-to-treat-transaction-fee-and-financing-fees). Rosenbaum & Pearl, *Investment Banking* (Ch. 5) remains the canonical text for the full build.
 
-- **No NOL carryforwards** — loss years pay zero tax but generate no shield for later years (understates returns for deals with early losses).
-- **No dividend recaps or interim distributions** — the sponsor's flows are the cheque at close and proceeds at exit.
-- **Annual periodicity** — real credit agreements amortise quarterly; annual is the standard teaching/screening convention.
-- **Straight-line fee amortisation over the hold** rather than the debt's contractual life; no write-off of unamortised fees on early repayment.
-- **No management rollover, option pool, or transaction bonuses** in the equity split.
-- **Fixed rates** — no floating-rate curves (SOFR + spread) or hedging.
-- **The exit-equity floor at zero** breaks the bridge identity in wipeout scenarios (the bridge is only asserted for solvent exits).
+## Documented simplifications
 
-Each of these is a candidate for a later phase; none silently distorts a normal base case.
+Stated openly, because pretending they don't exist is how models lie. These are deliberate: each is either immaterial to a screening-grade answer or would demand deal-specific data the tool doesn't have.
+
+**Accepted, with reasons**
+
+- **Annual periodicity** — real credit agreements amortise and test covenants quarterly. Annual is the standard screening convention; sub-annual timing shifts IRR by tens of basis points, not the answer.
+- **Fixed rates** — no SOFR curve or hedging. A floating-rate build needs a rate path assumption that is itself a bigger source of error than the convention.
+- **Revenue-driven working capital** — ΔNWC as a % of revenue change, rather than separate DSO/DIO/DPO drivers. The three-driver build is more precise but needs company-specific data.
+- **No unamortised-fee write-off** on early repayment (a non-cash P&L item that doesn't touch returns).
+- **The exit-equity floor at zero** means the bridge identity holds only for solvent exits — wipeouts are reported as such rather than as negative equity.
+
+**Genuine gaps, and what they'd change**
+
+- **No dividend recapitalisations** — a recap pulls cash forward and materially lifts IRR while leaving MOIC roughly flat. This is the largest missing mechanic for modelling real sponsor behaviour.
+- **No management rollover, option pool, or transaction bonuses** — these dilute sponsor proceeds at exit, typically by low-single-digit percentages of equity value.
+- **No add-on acquisitions** — buy-and-build is a major value-creation lever the model can't express.
+- **Single-company, no segment build** — revenue is one line, not a mix.
+
+Each is a candidate for a later phase; none silently distorts a normal base case, and the guardrail layer flags when inputs drift somewhere the simplifications would start to bite.
 
 ## Layout
 

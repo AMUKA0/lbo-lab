@@ -69,6 +69,8 @@ def rich_deal() -> Assumptions:
         revolver=RevolverAssumptions(commitment=50.0, cash_rate=0.06, undrawn_fee=0.005),
         transaction_fee_pct_ev=0.015,
         financing_fee_pct_debt=0.025,
+        financing_fee_tenor_years=7,
+        exit_fee_pct_ev=0.01,
         minimum_cash=10.0,
         cash_sweep_pct=0.75,
         hold_years=5,

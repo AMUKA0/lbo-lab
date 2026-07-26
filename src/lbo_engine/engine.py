@@ -8,8 +8,9 @@ For each projection year, in this order:
      iterative solve within the year (seed with interest on opening balances,
      recompute until the total interest charge stops moving), which is exactly
      what Excel's iterative-calculation mode does.
-  3. Tax on EBT, floored at zero (losses do not generate cash refunds;
-     NOL carryforwards are a documented simplification — see README).
+  3. Tax on EBT, floored at zero. Losses accumulate as NOL carryforwards and
+     offset up to `nol_limit_pct` of later positive pre-tax income (the 80%
+     post-TCJA US limitation by default).
   4. Cash available for debt service:
        net income + D&A + financing-fee amortisation + PIK accrual (non-cash)
        − capex − ΔNWC + opening cash − minimum cash.
@@ -57,6 +58,9 @@ class YearRow:
     pik_accrual_total: float
     revolver_undrawn_fee: float
     ebt: float
+    nol_opening: float
+    nol_used: float
+    nol_closing: float
     taxes: float
     net_income: float
     cash_available_for_debt_service: float
@@ -82,6 +86,7 @@ class LBOResult:
     exit_ebitda: float
     exit_ev: float
     exit_net_debt: float
+    exit_fees: float
     exit_equity: float
 
     @property
@@ -122,6 +127,7 @@ class LBOResult:
                 "delta_nwc": y.delta_nwc,
                 "cash_interest": y.cash_interest_total,
                 "pik_accrual": y.pik_accrual_total,
+                "nol_closing": y.nol_closing,
                 "taxes": y.taxes,
                 "net_income": y.net_income,
                 "cads": y.cash_available_for_debt_service,
@@ -140,12 +146,15 @@ def run_lbo(a: Assumptions) -> LBOResult:
 
     growth = a.growth_schedule()
     margin = a.margin_schedule()
-    fee_amort = su.financing_fees / a.hold_years  # straight-line over the hold
+    # Straight-line over the facility tenor (ASC 835-30); any portion beyond the
+    # hold simply never hits the P&L before exit.
+    fee_amort = su.financing_fees / a.financing_fee_tenor_years
 
     tranche_original = dict(su.tranche_amounts)
     tranche_opening = dict(su.tranche_amounts)
     revolver_opening = 0.0
     opening_cash = su.cash_to_balance_sheet
+    nol_opening = 0.0
     prev_revenue = a.operating.entry_revenue
 
     years: list[YearRow] = []
@@ -161,18 +170,21 @@ def run_lbo(a: Assumptions) -> LBOResult:
         row = _solve_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
+            nol_opening,
         )
         years.append(row)
 
         tranche_opening = {name: t.closing for name, t in row.tranches.items()}
         revolver_opening = row.revolver_closing
         opening_cash = row.closing_cash
+        nol_opening = row.nol_closing
         prev_revenue = revenue
 
     exit_ebitda = years[-1].ebitda
     exit_ev = a.exit_multiple * exit_ebitda
     exit_net_debt = years[-1].total_debt_closing - years[-1].closing_cash
-    exit_equity = exit_ev - exit_net_debt
+    exit_fees = a.exit_fee_pct_ev * exit_ev
+    exit_equity = exit_ev - exit_net_debt - exit_fees
     if exit_equity < 0:
         exit_equity = 0.0  # sponsor equity cannot go below zero (limited liability)
 
@@ -183,6 +195,7 @@ def run_lbo(a: Assumptions) -> LBOResult:
         exit_ebitda=exit_ebitda,
         exit_ev=exit_ev,
         exit_net_debt=exit_net_debt,
+        exit_fees=exit_fees,
         exit_equity=exit_equity,
     )
 
@@ -201,11 +214,23 @@ def _solve_year(
     tranche_opening: dict[str, float],
     revolver_opening: float,
     opening_cash: float,
+    nol_opening: float,
 ) -> YearRow:
     """Iteratively resolve the interest ↔ debt-balance circularity for one year."""
     # Seed: interest on opening balances (first pass of the iterative calc).
     cash_interest = {t.name: t.cash_rate * tranche_opening[t.name] for t in a.tranches}
     revolver_interest = a.revolver.cash_rate * revolver_opening
+
+    if not a.interest_on_average_balance:
+        # Circularity breaker: interest on opening balances only. Acyclic, so
+        # a single pass is the exact answer under that convention.
+        row = _build_year(
+            a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
+            tranche_original, tranche_opening, revolver_opening, opening_cash,
+            nol_opening, cash_interest, revolver_interest,
+        )
+        row.interest_iterations = 1
+        return row
 
     row: YearRow | None = None
     prev_total_interest = float("inf")
@@ -213,7 +238,7 @@ def _solve_year(
         row = _build_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            cash_interest, revolver_interest,
+            nol_opening, cash_interest, revolver_interest,
         )
         # Recompute interest on average balances given the resulting closings.
         cash_interest = {
@@ -248,6 +273,7 @@ def _build_year(
     tranche_opening: dict[str, float],
     revolver_opening: float,
     opening_cash: float,
+    nol_opening: float,
     cash_interest: dict[str, float],
     revolver_interest: float,
 ) -> YearRow:
@@ -262,7 +288,15 @@ def _build_year(
 
     # Income statement. Financing-fee amortisation and PIK are tax-deductible.
     ebt = ebit - cash_interest_total - pik_total - fee_amort - undrawn_fee
-    taxes = max(ebt, 0.0) * a.operating.tax_rate
+    if ebt > 0:
+        # NOLs shelter up to nol_limit_pct of positive pre-tax income (§172(a)).
+        nol_used = min(nol_opening, a.nol_limit_pct * ebt)
+        taxes = (ebt - nol_used) * a.operating.tax_rate
+        nol_closing = nol_opening - nol_used
+    else:
+        nol_used = 0.0
+        taxes = 0.0
+        nol_closing = nol_opening - ebt  # the loss carries forward
     net_income = ebt - taxes
 
     # Cash flow: add back non-cash charges (D&A, fee amortisation, PIK).
@@ -338,6 +372,9 @@ def _build_year(
         pik_accrual_total=pik_total,
         revolver_undrawn_fee=undrawn_fee,
         ebt=ebt,
+        nol_opening=nol_opening,
+        nol_used=nol_used,
+        nol_closing=nol_closing,
         taxes=taxes,
         net_income=net_income,
         cash_available_for_debt_service=cfads,

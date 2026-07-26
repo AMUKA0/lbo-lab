@@ -186,6 +186,59 @@ def scenario_set(base: Assumptions) -> dict[str, Assumptions]:
     }
 
 
+# ----------------------------------------------------------------- credit view
+
+def credit_stats(a: Assumptions) -> pd.DataFrame:
+    """The lender's dashboard, by year: net leverage, interest coverage,
+    (EBITDA − capex) coverage, and FCF conversion. These are the covenant-style
+    ratios a credit committee watches; a sponsor who can't speak to them
+    doesn't get financed."""
+    r = run_lbo(a)
+    records = []
+    for row in r.years:
+        net_debt = row.total_debt_closing - row.closing_cash
+        records.append({
+            "year": row.year,
+            "net_leverage": net_debt / row.ebitda if row.ebitda > 0 else float("nan"),
+            "interest_coverage": (
+                row.ebitda / row.cash_interest_total if row.cash_interest_total > 0 else float("inf")
+            ),
+            "ebitda_less_capex_coverage": (
+                (row.ebitda - row.capex) / row.cash_interest_total
+                if row.cash_interest_total > 0 else float("inf")
+            ),
+            "fcf_conversion": (
+                row.cash_available_for_debt_service / row.ebitda if row.ebitda > 0 else float("nan")
+            ),
+        })
+    return pd.DataFrame.from_records(records).set_index("year")
+
+
+# ------------------------------------------------------------------ exit timing
+
+def exit_year_profile(a: Assumptions) -> pd.DataFrame:
+    """IRR and MOIC if the sponsor exited at the end of each year instead of
+    the assumed hold, exit multiple unchanged. Shows the shape of the deal in
+    time: deleveraging compounds MOIC while the annualisation drags IRR — the
+    classic hold-longer-vs-flip tension."""
+    growth = a.growth_schedule()
+    margin = a.margin_schedule()
+    records = []
+    for k in range(2, a.hold_years + 1):
+        variant = a.model_copy(deep=True)
+        variant.hold_years = k
+        variant.operating.revenue_growth = growth[:k]
+        variant.operating.ebitda_margin = margin[:k]
+        try:
+            res = run_lbo(variant)
+            moic = res.moic if res.exit_equity > 0 else float("nan")
+        except ValueError:
+            records.append({"exit_year": k, "irr": float("nan"), "moic": float("nan")})
+            continue
+        records.append({"exit_year": k, "irr": _irr_for(variant), "moic": moic})
+    return pd.DataFrame.from_records(records).set_index("exit_year")
+
+
 # ------------------------------------------------------------------- breakeven
 
 def breakeven_exit_multiple(
