@@ -133,6 +133,15 @@ class Divestiture(BaseModel):
     fee_pct: float = Field(
         default=0.01, ge=0, lt=0.1, description="Sale-process costs, deducted from proceeds",
     )
+    # Gain over tax basis, taxed at the deal's rate in the year of sale. Defaults
+    # to zero rather than being inferred, because basis is deal-specific data the
+    # engine has no way to know — but it is not ignorable: a multi-billion
+    # disposal programme at a 35–38% rate is real cash, and a model that books
+    # the proceeds and not the tax overstates the deleveraging.
+    taxable_gain: float = Field(
+        default=0.0, ge=0,
+        description="Gain over tax basis, taxed at the operating tax rate in the sale year",
+    )
     label: str = Field(default="Divestiture", description="What was sold")
 
 
@@ -177,8 +186,22 @@ class Assumptions(BaseModel):
     financing_fee_tenor_years: int = Field(default=7, ge=1, le=10, description="Facility tenor over which financing fees amortise")
     exit_fee_pct_ev: float = Field(default=0.0, ge=0, lt=0.05, description="Sale-process costs at exit, % of exit EV, deducted from proceeds")
     # Tax attributes: losses carry forward and offset up to `nol_limit_pct` of a
-    # later year's positive pre-tax income (80% is the post-TCJA US rule; set 0 to disable).
-    nol_limit_pct: float = Field(default=0.8, ge=0, le=1)
+    # later year's positive pre-tax income.
+    #
+    # Read this carefully, because the natural misreading is expensive. The
+    # parameter is the SHARE OF INCOME A CARRYFORWARD MAY SHELTER, not the size
+    # of a restriction:
+    #   1.0 = unlimited — a loss can shelter 100% of a later year (pre-TCJA US)
+    #   0.8 = the post-TCJA §172(a) limitation
+    #   0.0 = carryforwards can never be used at all
+    # Setting 0.0 to mean "no limitation" produces a model that pays full cash
+    # tax on income it believes is sheltered.
+    nol_limit_pct: float = Field(
+        default=0.8, ge=0, le=1,
+        description="Share of a later year's pre-tax income a carryforward may shelter. "
+                    "1.0 is unlimited (pre-TCJA); 0.8 is post-TCJA §172(a); 0.0 disables "
+                    "the deduction entirely.",
+    )
     # The industry "circularity breaker". True = interest on the average of
     # opening and closing balances (correct, circular, solved iteratively).
     # False = interest on the opening balance only (approximate but acyclic) —

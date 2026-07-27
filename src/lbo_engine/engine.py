@@ -104,6 +104,7 @@ class YearRow:
     # Divestiture proceeds applied to debt this year, and the sale costs paid.
     divestiture_proceeds: float = 0.0
     divestiture_fees: float = 0.0
+    divestiture_tax: float = 0.0
     divestiture_labels: list[str] = field(default_factory=list)
     recap_target: float = 0.0
     recap_raised: float = 0.0
@@ -242,7 +243,10 @@ def run_lbo(a: Assumptions) -> LBOResult:
         # the new debt accrues no interest until the following year.
         recap = a.recap_for(year_no)
         if recap is not None:
-            fee_amort += _apply_recap(a, recap, row, ebitda) / a.financing_fee_tenor_years
+            fee_amort += (
+                _apply_recap(a, recap, row, ebitda, tranche_original)
+                / a.financing_fee_tenor_years
+            )
 
         years.append(row)
 
@@ -278,8 +282,13 @@ def _apply_divestiture(a: Assumptions, sale, row: YearRow) -> None:
     Senior-first because that is what a credit agreement requires: asset-sale
     proceeds are a mandatory prepayment, and the mandatory-prepayment waterfall
     runs top down. Anything left once every tranche is repaid stays as cash.
+
+    Tax on the gain is paid out of the proceeds before any of it reaches the
+    lenders — booking the cash and not the tax would overstate the deleveraging.
     """
-    net = sale.proceeds - sale.fee_pct * sale.proceeds
+    gain_tax = sale.taxable_gain * a.operating.tax_rate
+    row.divestiture_tax += gain_tax
+    net = sale.proceeds - sale.fee_pct * sale.proceeds - gain_tax
     row.divestiture_proceeds += net
     row.divestiture_fees += sale.fee_pct * sale.proceeds
     row.divestiture_labels.append(sale.label)
@@ -299,7 +308,9 @@ def _apply_divestiture(a: Assumptions, sale, row: YearRow) -> None:
     row.closing_cash += remaining
 
 
-def _apply_recap(a: Assumptions, recap, row: YearRow, ebitda: float) -> float:
+def _apply_recap(
+    a: Assumptions, recap, row: YearRow, ebitda: float, tranche_original: dict[str, float]
+) -> float:
     """Raise incremental debt at year end and dividend the net proceeds out.
 
     Mutates `row` in place and returns the financing fee, which the caller adds
@@ -327,6 +338,9 @@ def _apply_recap(a: Assumptions, recap, row: YearRow, ebitda: float) -> float:
 
     name = recap.tranche or a.tranches[0].name
     row.tranches[name].closing += raised
+    # Mandatory amortisation is a % of ORIGINAL principal, so incremental debt
+    # has to join that base or it would never amortise again.
+    tranche_original[name] += raised
 
     fee = recap.financing_fee_pct * raised
     row.recap_raised = raised

@@ -109,3 +109,46 @@ class TestCircularityBreaker:
         d.interest_on_average_balance = False
         gap = abs(sponsor_irr(run_lbo(d)) - sponsor_irr(run_lbo(rich_deal)))
         assert gap < 0.03
+
+
+class TestNolDirection:
+    """`nol_limit_pct` is the share of a later year's income a carryforward may
+    shelter, not the size of a restriction. The natural misreading — 0.0 as "no
+    limitation" — silently disables the deduction entirely, so every case in the
+    library once paid full cash tax on income its own comments said was
+    sheltered. These pin the direction so it cannot invert again.
+    """
+
+    def _loss_then_profit(self, rich_deal):
+        payload = rich_deal.model_dump()
+        # A deep first year, then recovery: the only shape where NOLs bite.
+        payload["operating"]["ebitda_margin"] = [0.10, 0.22, 0.22, 0.22, 0.22]
+        return payload
+
+    def test_full_carryforward_shelters_more_than_the_tcja_limit(self, rich_deal):
+        from lbo_engine import Assumptions, run_lbo
+
+        payload = self._loss_then_profit(rich_deal)
+        taxes = {}
+        for limit in (0.0, 0.8, 1.0):
+            payload["nol_limit_pct"] = limit
+            r = run_lbo(Assumptions.model_validate(payload))
+            taxes[limit] = r.years[1].taxes
+            assert r.years[0].nol_closing > 0, "year one must generate a carryforward"
+
+        # More shelter allowed => less tax paid. Never the other way round.
+        assert taxes[0.0] > taxes[0.8] >= taxes[1.0]
+
+    def test_zero_means_no_deduction_not_no_limitation(self, rich_deal):
+        """The exact misreading that caused the bug: at 0.0 a carryforward
+        exists on the balance sheet and can never be used."""
+        from lbo_engine import Assumptions, run_lbo
+
+        payload = self._loss_then_profit(rich_deal)
+        payload["nol_limit_pct"] = 0.0
+        r = run_lbo(Assumptions.model_validate(payload))
+
+        assert r.years[0].nol_closing > 0
+        assert all(y.nol_used == 0.0 for y in r.years)
+        # ...and the carryforward just accumulates, never relieving anything.
+        assert r.years[-1].nol_closing >= r.years[0].nol_closing

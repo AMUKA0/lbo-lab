@@ -41,7 +41,7 @@ The interactive API schema is at `/api/docs`.
 pytest
 ```
 
-136 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+146 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## The case-study library
 
@@ -55,19 +55,29 @@ Each case is modelled **twice**, on the same capital structure:
 | **Actual operating path** | The same structure fed the revenue and margin path that actually occurred. | Does the engine reproduce reality when handed reality? |
 | **What happened** | Reported outcome, with a confidence label. | Not a model output, and styled so it can't be mistaken for one. |
 
-Where possible the realised column is **calibrated against reported outcomes and then checked**, not fitted and asserted. HCA is the clearest example: modelled 2010 revenue of $30.3bn against $30.7bn reported, closing debt of $26.2bn against $28.2bn, and exit equity of $18.7bn against an IPO that valued the company near $15.8bn.
+Where possible the realised column is **calibrated against reported outcomes and then checked**. HCA is the clearest example: the hold closed in November 2006 and exits at the March 2011 IPO, so year 4 is 2010 — modelled revenue there is $29.1bn against $30.7bn reported, and modelled exit equity is $14.2bn against an IPO that valued the company near $15.8bn. Modelled 2010 debt lands at $31.1bn against $28.2bn reported, and that gap is not hidden: the model can match the reported dividends or the reported debt, not both, and the dividends are the better-sourced figure.
 
-Every input carries provenance — **reported** (appears in a filing), **derived** (follows arithmetically), or **estimated** (a judgement call, with the reasoning given). Two tests enforce the no-hindsight claim rather than merely asserting it in prose: one fails if any case underwrites an exit multiple above its entry multiple (the commonest way hindsight smuggles itself in), another fails if the two columns differ in anything but the operating path and the exit.
+Every input carries provenance — **reported** (appears in a filing), **derived** (follows arithmetically), or **estimated** (a judgement call, with the reasoning given).
+
+**What the no-hindsight claim is and is not.** The underwriting columns follow a stated rule set: the exit multiple is set at or below entry; growth and margin come from the trailing trend or contemporaneous consensus; the structure comes from filings. Two tests hold the line — one fails if any case underwrites multiple expansion, another if the two columns differ in capital structure. But be clear about their limits: the first checks a rule the author already chose to follow, so it prevents regression rather than proving independence, and the second checks entry multiple, EBITDA, tranche terms, revolver and fees — **not** capex, working capital, minimum cash or the cash sweep.
+
+That last gap is real and load-bearing. HCA's realised column runs a 25% cash sweep against the underwriting column's 75%, because HCA never deleveraged — free cash flow went to capex and dividends, and reported debt was still $28.2bn in 2010 against $28bn at close. That is a *structural* term calibrated to a known outcome, it is the right modelling choice, and no test catches it. The realised columns are calibrated to reported outcomes and say so. The underwriting columns are rule-governed reconstructions, not independently verifiable ones. Anyone reading them as a blind out-of-sample test is reading more than is claimed.
 
 Three of the eight runs hit a **liquidity break**: operating cash flow stops covering contractual interest and amortisation, and the revolver cannot fund the gap. The engine stops there rather than printing a schedule that quietly runs a negative cash balance — which is what a model without a liquidity constraint does, and why such models never show a deal failing. Each break is reported with the year it happens and a full schedule for the years the structure *did* service, so the drain is legible rather than merely asserted:
 
 - **Hilton's realised path breaks in year three.** Fed the RevPAR collapse that actually happened, cash interest exceeds EBITDA from 2009 and the revolver is exhausted by 2010 — which is precisely when Blackstone bought back ~$2bn of Hilton's debt for ~$800m and converted ~$2bn to preferred. The model identifies the restructuring from the numbers alone.
-- **RJR breaks on its own underwriting, in year two.** At the reported 87% debt the modelled cheque lands at $3.9bn against KKR's ~$3.2bn, and cash interest plus PIK accrual then consumes close to the whole of a $3.1bn EBITDA. Historically exact: the deal was never self-financing from operations — it depended on the divestitures clearing, and still needed a $1.7bn equity injection in 1990.
-- **TXU underwrites at a low-double-digit IRR** and still lost $8.3bn. Nothing in the guardrails, the tornado or the sensitivity grid flags it, because every one of those varies inputs the model contains — and the input that destroyed the deal, the price of natural gas, was not one of them.
+- **RJR's underwriting column nearly reproduces the outcome** — about 0.7× and a negative IRR, against a reported ~1.0× and an IRR of well under 1%. The winner's curse was visible at signing. It only services itself because the divestitures land; strip them out and the engine refuses to print a schedule, which is the honest verdict on the structure considered alone.
+- **TXU underwrites at a low-double-digit IRR** and still lost $8.3bn. The tempting lesson — that the tornado could not have caught it because gas price is not an input — is too glib: a gas collapse arrives as revenue and margin, and both *are* tornado drivers. What the tornado misses is the **range**, not the variable. It swings margin by a couple of hundred basis points; the business took twenty-four hundred. Reading a narrow sensitivity band as reassurance is the actual error.
 
 Where the engine structurally cannot follow a deal — RJR's divestitures and preferred layer, HCA's IPO dilution, TXU's gas hedges, Hilton's discounted debt buyback and staged sell-down — it is stated on the page rather than closed by tuning an assumption until the answer looks right.
 
 One of those caveats has since been closed rather than restated. HCA's realised column originally carried "the engine has no recap mechanic"; the engine now has one, and that column models HCA's 2010 dividend recapitalisation sized to the ~$4.3bn actually paid. The case exposed the gap and the gap got fixed — which is the point of building the library before finishing the engine.
+
+### Reading the reported outcomes
+
+MOIC and IRR have to reconcile, and for two of these deals the widely-quoted pair does not. Hilton at 3.0× over eleven years compounds to **10.5%**, not the mid-teens a $14bn gain suggests; HCA at 3.5× over ten years compounds to **13.2%**, not 20%. Both realised more than their compounded multiple implies, but only because capital came back early — Hilton through the 2013 IPO and sell-downs to 2018, HCA through the 2010 recapitalisations and the 2011 IPO. The figures shown are the conservative end of that range and are labelled *estimated*, because the actual distribution schedules are not public. A site that printed 3.0× and 15% side by side without explaining the gap would be asserting something arithmetically false.
+
+Note also that modelled equity cheques run above the reported ones — $6.5bn against $5.6bn for Hilton, $6.2bn against $5.3bn for HCA — because Uses here fund transaction fees, financing fees and minimum cash on top of enterprise value, while the reported debt/equity splits are struck on EV alone. Every modelled MOIC is therefore on a denominator roughly a sixth larger than the reported one.
 
 ## Methodology — and where it matches industry practice
 
@@ -135,6 +145,12 @@ Stated openly, because pretending they don't exist is how models lie. These are 
 
 **Genuine gaps, and what they'd change**
 
+- **No §163(j) interest limitation.** The 30%-of-adjusted-taxable-income cap is the tax provision that binds hardest on a modern US LBO, and it is absent while the easier §172(a) NOL rule is implemented. On a six-turn structure this understates cash tax.
+- **No §382 limitation.** An LBO *is* an ownership change, so a target's pre-existing NOLs would be capped at roughly equity value × the long-term tax-exempt rate. The engine carries them forward unrestricted.
+- **No covenant test and no maturity wall.** The model fails on *liquidity* only — it runs out of cash. That is the rarer of the two real failure modes: most 2008–09 sponsor distress was covenant-driven, and TXU's actual death was a 2014 maturity wall. Coverage below 2.0× is flagged in the lifecycle but nothing acts on it.
+- **The PIK toggle election is greedy.** The engine elects only when a year already fails, which is when the revolver is exhausted — so it will burn revolver capacity at the senior rate for two years rather than PIK at the junior rate earlier. A treasurer looking a year ahead would decide differently, and on TXU that choice is load-bearing.
+- **Interest coverage in the credit stats is on cash interest only.** For a deal with a large PIK strip — RJR's is $1.3–2.2bn a year — total-interest coverage is the more honest ratio and is not shown.
+- **No interest income on balance-sheet cash**, no per-tranche facility tenor, and the cash sweep is a flat percentage rather than the leverage-based step-down grid a credit agreement actually specifies.
 - **No management rollover, option pool, or transaction bonuses** — these dilute sponsor proceeds at exit, typically by low-single-digit percentages of equity value.
 - **No add-on acquisitions** — buy-and-build is a major value-creation lever the model can't express.
 - **Single-company, no segment build** — revenue is one line, not a mix.

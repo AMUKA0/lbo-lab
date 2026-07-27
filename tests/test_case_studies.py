@@ -188,3 +188,56 @@ def test_no_break_note_without_a_break(case):
         assert assumptions is not None
         with pytest.raises(ValueError):
             run_lbo(assumptions)
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+def test_column_notes_do_not_describe_a_run_that_no_longer_happens(case):
+    """Prose rots faster than code. A column note claiming the structure "does
+    not survive" or that the engine is "refusing to print" must not sit above a
+    column that runs — that exact contradiction shipped once, because the note
+    was written when RJR had no divestiture mechanic and was never revisited
+    when it got one."""
+    from lbo_engine import run_lbo
+
+    FAILURE_LANGUAGE = (
+        "does not survive",
+        "refusing to print",
+        "cannot service itself",
+        "fails for the same reason",
+    )
+    for column, note in case.column_notes.items():
+        assumptions = getattr(case, column)
+        if assumptions is None:
+            continue
+        try:
+            run_lbo(assumptions)
+        except ValueError:
+            continue  # the column does break; failure language is fair
+        lowered = note.lower()
+        for phrase in FAILURE_LANGUAGE:
+            assert phrase not in lowered, (
+                f"{case.slug}/{column} runs to exit, but its note says {phrase!r}"
+            )
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+def test_reported_moic_and_irr_are_mutually_consistent(case):
+    """A reported pair has to be arithmetically possible. Held at a single
+    terminal exit, MOIC^(1/years)-1 is the floor for IRR; anything above it
+    requires capital to have come back early, which is a real and common thing
+    — but a *large* excess means the pair was copied from somewhere without
+    being checked. Hilton at 3.0x/11y was published here as 15% when the
+    compounded floor is 10.5%."""
+    o = case.outcome
+    if o.realised_moic is None or o.realised_irr is None or o.realised_moic <= 0:
+        return
+    floor = o.realised_moic ** (1.0 / o.holding_years) - 1.0
+    assert o.realised_irr >= floor - 1e-9, (
+        f"{case.slug}: {o.realised_moic}x over {o.holding_years}y compounds to "
+        f"{floor:.1%}, but {o.realised_irr:.1%} is reported — below the floor is impossible"
+    )
+    # Early distributions can lift IRR a long way, but not without limit.
+    assert o.realised_irr <= floor + 0.10, (
+        f"{case.slug}: {o.realised_irr:.1%} sits more than 10pts above the "
+        f"{floor:.1%} compounded floor; state the distribution profile or lower it"
+    )

@@ -287,7 +287,7 @@ HILTON = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,  # pre-TCJA: no 80% limitation, full carryforward
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year  # pre-TCJA: no 80% limitation, full carryforward
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -320,7 +320,7 @@ HILTON = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
         hold_years=11,
@@ -381,8 +381,8 @@ HILTON = CaseStudy(
         exit_year=2018,
         holding_years=11.0,
         realised_moic=3.0,
-        realised_irr=0.15,
-        confidence="widely reported",
+        realised_irr=0.13,
+        confidence="estimated",
         headline="~$14bn of profit — the largest dollar gain in private-equity history",
         narrative=(
             "Blackstone wrote the investment down by around 71% at the trough. Bloomberg's "
@@ -390,10 +390,16 @@ HILTON = CaseStudy(
             "right, and the two halves of it are separable. The timing was as bad as "
             "timing gets. What saved it was structure (no amortisation, no maintenance "
             "covenants, long tenor), operational change under Chris Nassetta, and the "
-            "willingness to hold for eleven years instead of five. MOIC of about 3× over "
-            "that period is a mid-teens IRR: an outstanding dollar outcome and a merely "
-            "good annualised one, which is the distinction the exit-timing chart in this "
-            "app exists to make."
+            "willingness to hold for eleven years instead of five. "
+            "Be careful with the annualised figure, because the headline invites an "
+            "error: 3× over eleven years compounds to about 10.5%, not the mid-teens "
+            "a $14bn gain suggests. The realised IRR is higher than 10.5% only because "
+            "the exit was staged — the December 2013 IPO and the sell-downs through "
+            "2018 returned capital progressively rather than in one block at the end — "
+            "which plausibly puts it in the 12–15% range depending on the schedule of "
+            "those sales. An outstanding dollar outcome and a merely good annualised "
+            "one, and the gap between the two is exactly what the exit-timing chart in "
+            "this app exists to show."
         ),
     ),
     break_notes=[
@@ -531,7 +537,7 @@ HCA = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=400.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -563,7 +569,7 @@ HCA = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=400.0,
         # HCA did not sweep. Free cash flow went to capex and, from 2010, to
         # dividend recapitalisations — reported debt was still $28.2bn in 2010
@@ -632,7 +638,7 @@ HCA = CaseStudy(
         exit_year=2016,
         holding_years=10.0,
         realised_moic=3.5,
-        realised_irr=0.20,
+        realised_irr=0.16,
         confidence="estimated",
         headline="Roughly 3.5× on $5.3bn, with much of it returned early through recaps",
         narrative=(
@@ -643,7 +649,12 @@ HCA = CaseStudy(
             "pull capital forward through recaps. The Affordable Care Act was a genuine "
             "windfall the underwriting case did not contain. The headline multiple is "
             "widely quoted in a range and should be read as approximate; the shape of the "
-            "outcome is not in doubt."
+            "outcome is not in doubt. "
+            "The annualised figure needs the same care as Hilton's: 3.5× over ten years "
+            "compounds to about 13%, and the ~20% commonly cited is only reachable "
+            "because the dividend recapitalisations and the 2011 IPO returned capital "
+            "years before the 2016 full exit. It is a statement about *timing*, not "
+            "about a larger multiple."
         ),
     ),
     source_keys=["hca-8k", "hca-close", "hca-fortune"],
@@ -692,10 +703,12 @@ TXU = CaseStudy(
     verdict="wipeout",
     why_it_is_here=(
         "The most important case in the library, because the underwriting was not "
-        "obviously reckless. TXU was bought at 8.5× — below Hilton, barely above HCA — "
-        "with less leverage than either. Run the model on the numbers as signed and it "
-        "produces a perfectly respectable return. The deal was destroyed by a single "
-        "assumption sitting outside the model entirely: the price of natural gas."
+        "obviously reckless. TXU was bought at 8.5× — well below Hilton and barely "
+        "above HCA — on cash flows a utility investor would have called defensive. "
+        "Run the model on the numbers as signed and it produces a perfectly "
+        "respectable return. Nearly seven turns is not conservative, and it is a "
+        "shade above HCA's; what made it look survivable was the apparent stability "
+        "of the cash flow carrying it, and that stability was a bet on one commodity."
     ),
     thesis=(
         "TXU's generation fleet was largely coal and nuclear, but wholesale power prices "
@@ -756,7 +769,7 @@ TXU = CaseStudy(
         financing_fee_pct_debt=0.025,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=1000.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -790,7 +803,7 @@ TXU = CaseStudy(
         financing_fee_pct_debt=0.025,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=1000.0,
         cash_sweep_pct=0.75,
         hold_years=7,
@@ -904,11 +917,17 @@ TXU = CaseStudy(
     column_notes={
         "underwriting": (
             "This is the column worth sitting with. On the numbers as signed the deal "
-            "returns something respectable — a low-double-digit IRR at under seven "
-            "turns, bought more cheaply than Hilton. Nothing in the guardrails, the "
-            "tornado or the sensitivity grid flags it, because every one of those "
-            "tools varies inputs the model contains, and the input that destroyed this "
-            "deal was not one of them."
+            "returns something respectable — a low-double-digit IRR at just under seven "
+            "turns, bought more cheaply than Hilton. "
+            "The tempting lesson is that the tornado could not have caught this because "
+            "gas price is not an input, and that is too glib: a gas collapse arrives as "
+            "revenue and margin, and both are tornado drivers. The realised column "
+            "expresses it exactly that way. What the tornado misses is not the "
+            "*variable* but the *range* — it swings margin by a couple of hundred basis "
+            "points, and the business took twenty-four hundred. A sensitivity band "
+            "calibrated to ordinary trading noise says nothing about a structural break "
+            "in the commodity that sets your price, and reading a narrow tornado as "
+            "reassurance is the actual error."
         ),
         "realised": (
             "Fed the collapse in merchant margin, the structure fails partway through "
@@ -1012,7 +1031,7 @@ RJR = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
         # The divestitures were agreed at or shortly after close and were the
@@ -1020,8 +1039,22 @@ RJR = CaseStudy(
         # reports a deal that cannot service itself — which is true of the
         # structure alone and false of the plan.
         divestitures=[
-            Divestiture(year=1, proceeds=2500.0, label="European Nabisco businesses"),
-            Divestiture(year=2, proceeds=2600.0, label="Del Monte"),
+            # Gains estimated at ~20% of consideration, not the half a
+            # "long-held conglomerate asset" instinct suggests. R.J. Reynolds
+            # bought Nabisco Brands in 1985 for about $4.9bn, which stepped basis
+            # up only three to four years before these disposals; selling into a
+            # similar multiple environment therefore produces a modest gain, not
+            # a large one. At 38% that is roughly $390m of cash tax — real, and
+            # previously ignored altogether, but far short of the ~$970m a
+            # half-the-proceeds assumption would have charged.
+            Divestiture(
+                year=1, proceeds=2500.0, taxable_gain=500.0,
+                label="European Nabisco businesses (BSN/Danone)",
+            ),
+            Divestiture(
+                year=2, proceeds=2600.0, taxable_gain=520.0,
+                label="Del Monte and the balance of the disposal programme",
+            ),
         ],
         hold_years=5,
         exit_multiple=9.5,
@@ -1051,12 +1084,26 @@ RJR = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=0.0,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
         divestitures=[
-            Divestiture(year=1, proceeds=2500.0, label="European Nabisco businesses"),
-            Divestiture(year=2, proceeds=2600.0, label="Del Monte"),
+            # Gains estimated at ~20% of consideration, not the half a
+            # "long-held conglomerate asset" instinct suggests. R.J. Reynolds
+            # bought Nabisco Brands in 1985 for about $4.9bn, which stepped basis
+            # up only three to four years before these disposals; selling into a
+            # similar multiple environment therefore produces a modest gain, not
+            # a large one. At 38% that is roughly $390m of cash tax — real, and
+            # previously ignored altogether, but far short of the ~$970m a
+            # half-the-proceeds assumption would have charged.
+            Divestiture(
+                year=1, proceeds=2500.0, taxable_gain=500.0,
+                label="European Nabisco businesses (BSN/Danone)",
+            ),
+            Divestiture(
+                year=2, proceeds=2600.0, taxable_gain=520.0,
+                label="Del Monte and the balance of the disposal programme",
+            ),
         ],
         hold_years=6,
         # Tobacco litigation and the price war compressed what anyone would pay.
@@ -1179,24 +1226,34 @@ RJR = CaseStudy(
     source_keys=["rjr-wapo", "rjr-10k94", "barbarians"],
     column_notes={
         "underwriting": (
-            "The structure does not survive its own underwriting, and that is the "
-            "finding rather than a defect. At the reported 87% debt, cash interest plus "
-            "PIK accrual runs close to the whole of a $3.1bn EBITDA, and the mandatory "
-            "amortisation on the bank facilities cannot be funded from operations at "
-            "all. This is historically exact: RJR could not service the "
-            "structure as signed, which is why Del Monte and the European Nabisco "
-            "businesses had to be sold, and why KKR still had to inject about $1.7bn "
-            "of fresh equity in 1990. A deal that only works if the divestitures clear "
-            "at the assumed prices, on the assumed timetable, is a different and much "
-            "riskier proposition than the IRR alone suggests — and the engine, which "
-            "has no divestiture mechanic, says so by refusing to print a schedule."
+            "The model very nearly reproduces the outcome from pre-close "
+            "information alone: about 0.7× against a reported ~1.0×, and a negative "
+            "IRR against a reported one of well under 1%. The winner's curse was "
+            "visible at signing. "
+            "Note what carries it. Cash interest plus PIK accrual runs close to the "
+            "whole of a $3.1bn EBITDA, and the structure services itself only because "
+            "the divestitures land — $2.5bn in year one, $2.6bn in year two, less tax "
+            "on the gains. Remove them and the engine refuses to print a schedule at "
+            "all, which is the honest verdict on the structure considered alone. A "
+            "deal that works only if the asset sales clear at the assumed prices, on "
+            "the assumed timetable, is a far riskier proposition than an IRR implies. "
+            "Watch net debt in the later years: it *rises*, because 15% PIK accretion "
+            "on the preferred strip outruns everything operations can repay. That is "
+            "the mechanism that forced the 1990 recapitalisation, visible here in the "
+            "plan as written."
         ),
         "realised": (
-            "Fails for the same reason, earlier and harder once the price war "
-            "compresses margin. Note the entry multiple of 9.7×, not the 7.5–8.0× "
-            "widely quoted: those figures divide by the $25bn equity price rather than "
-            "enterprise value. Two turns of entry multiple is the difference between a "
-            "hard deal and an impossible one."
+            "The same plan holds for four years, then breaks in year five — 1993. "
+            "Marlboro Friday, 2 April that year, is when Philip Morris cut Marlboro's "
+            "price by around 20% and detonated the premium-cigarette economics the "
+            "whole structure rested on. The model finds the year without being told "
+            "about it. What it cannot follow is what KKR did next: the 1990 "
+            "recapitalisation and later refinancings kept the company alive to a 1995 "
+            "exit that returned roughly the money in. "
+            "Note also the entry multiple of 9.7×, not the 7.5–8.0× widely quoted: "
+            "those figures divide by the $25bn *equity* price rather than enterprise "
+            "value. Two turns of entry multiple is the difference between a hard deal "
+            "and an impossible one."
         ),
     },
 )

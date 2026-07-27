@@ -15,7 +15,7 @@ const FEATURES = [
   {
     no: "01",
     title: "The engine, done properly",
-    body: "Sources & uses with equity as the plug, a multi-tranche schedule with mandatory amortisation and a senior-first cash sweep, PIK accretion, NOL carryforwards under the 80% limitation, and a revolver for shortfalls — with the interest ↔ balance circularity resolved by an iterative solve, the way Excel's iterative mode does it.",
+    body: "Sources & uses with equity as the plug, a multi-tranche schedule with mandatory amortisation and a senior-first cash sweep, PIK accretion, NOL carryforwards under a configurable §172(a) shelter, and a revolver for shortfalls — with the interest ↔ balance circularity resolved by an iterative solve, the way Excel's iterative mode does it.",
   },
   {
     no: "02",
@@ -81,7 +81,7 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="136" k="tests · golden case solved by hand" />
+          <Stat v="146" k="tests · golden case solved by hand" />
           <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
           <Stat v="1e-10" k="tolerance on the interest solve" />
@@ -138,9 +138,11 @@ export function Landing() {
               value bridge reconciles exactly, and credit stats cover the lender's view.
             </li>
             <li>
-              <strong>Known gaps</strong> — no management rollover or add-ons; annual
-              periodicity and fixed rates. Each is listed in the README with
-              what it would change, because pretending they don't exist is how models lie.
+              <strong>Known gaps</strong> — no §163(j) interest limitation and no §382
+              cap; failure is tested on liquidity only, with no covenant or maturity
+              wall; no management rollover or add-ons; annual periodicity and fixed
+              rates. Each is listed in the README with what it would change, because
+              pretending they don't exist is how models lie.
             </li>
           </ul>
         </div>
