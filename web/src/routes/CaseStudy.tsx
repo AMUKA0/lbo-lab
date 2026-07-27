@@ -214,6 +214,36 @@ export function CaseStudy() {
           </div>
         )}
 
+        {/* The account of the break year. Three claims kept visually apart,
+            because collapsing them is how a model's limits disappear into a
+            narrative: what happened, what the model computed, and what the
+            model could not see — the last being why the two differ. */}
+        {active?.break_note && (
+          <div className="break-note">
+            <div className="bn-head">
+              <span className="bn-year">{active.break_note.calendar}</span>
+              <h4>{active.break_note.headline}</h4>
+            </div>
+            <div className="bn-grid">
+              <BreakPanel
+                label="What happened"
+                tone="fact"
+                body={active.break_note.what_happened}
+              />
+              <BreakPanel
+                label="What the engine saw"
+                tone="model"
+                body={active.break_note.what_the_engine_saw}
+              />
+              <BreakPanel
+                label="What the engine cannot see"
+                tone="limit"
+                body={active.break_note.what_the_engine_cannot_see}
+              />
+            </div>
+          </div>
+        )}
+
         {active?.partial_run && (
           <>
             <Flags flags={active.partial_run.flags} />
@@ -332,6 +362,23 @@ export function CaseStudy() {
         </Link>
       </footer>
     </>
+  );
+}
+
+function BreakPanel({
+  label,
+  body,
+  tone,
+}: {
+  label: string;
+  body: string;
+  tone: "fact" | "model" | "limit";
+}) {
+  return (
+    <section className={`bn-panel bn-${tone}`}>
+      <h5>{label}</h5>
+      <p>{body}</p>
+    </section>
   );
 }
 

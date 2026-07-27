@@ -160,6 +160,26 @@ class Outcome:
 
 
 @dataclass(frozen=True)
+class BreakNote:
+    """An account of the year a column runs out of liquidity.
+
+    Split into three deliberately, because they are three different claims and
+    running them together is how a model's limits get lost in a narrative:
+    what actually happened that year, what the engine computed from the numbers,
+    and what the engine structurally could not see. The third is always the
+    reason the modelled break and the real outcome differ.
+    """
+
+    column: Literal["underwriting", "realised"]
+    year: int          # projection year, matching the engine's break
+    calendar: str      # the real-world year it corresponds to
+    headline: str
+    what_happened: str
+    what_the_engine_saw: str
+    what_the_engine_cannot_see: str
+
+
+@dataclass(frozen=True)
 class CaseStudy:
     slug: str
     name: str
@@ -183,6 +203,9 @@ class CaseStudy:
     # when the engine refuses to model the structure, which in this library is
     # usually the finding rather than a defect.
     column_notes: dict[str, str] = field(default_factory=dict)
+    # One per column that breaks. Rendered beside the break itself, because a
+    # liquidity break with no account of the year is a dead end.
+    break_notes: list[BreakNote] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------- Hilton
@@ -373,6 +396,42 @@ HILTON = CaseStudy(
             "app exists to make."
         ),
     ),
+    break_notes=[
+        BreakNote(
+            column="realised",
+            year=3,
+            calendar="2010",
+            headline="The year Blackstone had to renegotiate",
+            what_happened=(
+                "US RevPAR fell roughly 17% in 2009 and was still depressed through "
+                "2010. Hilton's cash interest bill on $20.5bn of property debt no "
+                "longer fit inside its EBITDA. In April 2010 Blackstone restructured: "
+                "it bought back around $2bn of Hilton's own debt for roughly $800m — "
+                "buying its own liabilities at a discount because the credit market "
+                "had written them down — converted a further ~$2bn into preferred, "
+                "and put in fresh equity. Total debt came down from about $20bn to "
+                "about $16bn. The company never defaulted, but only because the "
+                "capital structure was renegotiated."
+            ),
+            what_the_engine_saw=(
+                "EBITDA falling from $1,749m at entry to roughly $1,354m by year two "
+                "while cash interest stayed near $1,646m — coverage through 1.0×, "
+                "meaning operations no longer earned the interest bill. The $1bn "
+                "revolver absorbed the year-one and year-two shortfalls and was "
+                "exhausted by year three, leaving a $780m gap with nothing to fund it."
+            ),
+            what_the_engine_cannot_see=(
+                "All three of the things that actually resolved it. Repurchasing debt "
+                "below par is a gain the engine has no concept of; converting debt to "
+                "preferred needs a layer between debt and equity that the engine does "
+                "not model; and follow-on sponsor equity is not an input. Every one is "
+                "a renegotiation, and this engine models a fixed contract. The break "
+                "is therefore not a prediction that Hilton failed — it is the model "
+                "locating, from the numbers alone, the exact year the contract as "
+                "signed stopped being viable."
+            ),
+        )
+    ],
     source_keys=["hilton-8k", "hilton-prem14a", "hilton-oxford", "hilton-bsic"],
     column_notes={
         "underwriting": (
@@ -803,6 +862,44 @@ TXU = CaseStudy(
             "is to something that is not an input."
         ),
     ),
+    break_notes=[
+        BreakNote(
+            column="realised",
+            year=5,
+            calendar="2012",
+            headline="The hedges roll off and the shale collapse lands in full",
+            what_happened=(
+                "Horizontal drilling and hydraulic fracturing moved from marginal to "
+                "dominant, taking Henry Hub gas from the $7–9/MMBtu range the deal was "
+                "underwritten on down to $2–4. Because ERCOT power prices are set at "
+                "the margin by gas plants, North Texas power settled around $40/MWh "
+                "against the mid-$60s in the investment case, and TCEH's merchant "
+                "margin — the spread the whole deal was a levered bet on — collapsed. "
+                "The sponsors' gas hedges had held the damage off since 2008; as they "
+                "rolled off there was nothing between the business and the market. EFH "
+                "ran a series of distressed exchanges and maturity extensions before "
+                "filing for Chapter 11 on 29 April 2014 with roughly $42bn of debt."
+            ),
+            what_the_engine_saw=(
+                "Margin compressing from 47% toward 27% on a top line falling 5–10% a "
+                "year, against a largely fixed cost base and roughly $36bn of debt. "
+                "Cash interest that was comfortably covered at close became larger "
+                "than EBITDA, the revolver drained, and by year five there was a $977m "
+                "gap the facility could not fund."
+            ),
+            what_the_engine_cannot_see=(
+                "The hedge book, which is why the modelled break lands around 2012 and "
+                "the real filing came in 2014 — the engine holds no commodity "
+                "positions, so it compresses margin smoothly and arrives early. Nor "
+                "the multi-entity ring-fence: EFH held Oncor, a regulated utility that "
+                "retained real value and was eventually sold to Sempra, so the loss "
+                "was concentrated in the merchant side rather than spread evenly as a "
+                "single-entity model implies. Nor the distressed exchanges that bought "
+                "two more years. Direction and cause are right; the timing is "
+                "approximate, and the reason is named rather than tuned away."
+            ),
+        )
+    ],
     source_keys=["txu-bsic", "txu-efh-bankruptcy"],
     column_notes={
         "underwriting": (
@@ -1040,6 +1137,45 @@ RJR = CaseStudy(
             "return."
         ),
     ),
+    break_notes=[
+        BreakNote(
+            column="realised",
+            year=5,
+            calendar="1993",
+            headline="Marlboro Friday",
+            what_happened=(
+                "On 2 April 1993 Philip Morris cut the price of Marlboro by around "
+                "20% to fight discount brands. It destroyed the premium-cigarette "
+                "pricing that RJR's margins — and therefore the whole capital "
+                "structure — depended on, and wiped billions off the value of branded "
+                "consumer businesses across the market. Tobacco litigation was "
+                "escalating in parallel, compressing the multiple anyone would pay for "
+                "a cigarette company. RJR did not fail here: KKR had already "
+                "recapitalised in 1990, injecting about $1.7bn of fresh equity and "
+                "arranging roughly $2.25bn of new bank loans when the reset provisions "
+                "on the PIK paper threatened a default, and refinanced repeatedly "
+                "afterwards. The final exit came via the 1995 Borden share exchange."
+            ),
+            what_the_engine_saw=(
+                "Margin dropping sharply in year five, against a 15% PIK strip that "
+                "had been accreting since close. This is the mechanism worth watching "
+                "in the schedule: net debt *rises* through the back half of the hold "
+                "even while operations repay bank debt, because the preferred accretes "
+                "faster than the business can pay it down. A single bad year on top of "
+                "that leaves nothing, and the revolver cannot cover it."
+            ),
+            what_the_engine_cannot_see=(
+                "That a sponsor can keep a company alive through repeated "
+                "recapitalisation. The 1990 equity injection, the reset-driven "
+                "refinancing and the later amendments are all follow-on capital and "
+                "renegotiation, none of which the engine models — it either services "
+                "the debt from operations and asset sales, or reports that it cannot. "
+                "The break is a fair statement that the structure had no capacity left "
+                "to absorb a shock by 1993, which is exactly why the equity earned "
+                "nothing over six years even though the business survived."
+            ),
+        )
+    ],
     source_keys=["rjr-wapo", "rjr-10k94", "barbarians"],
     column_notes={
         "underwriting": (

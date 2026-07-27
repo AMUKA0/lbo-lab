@@ -153,3 +153,38 @@ def test_txu_underwrites_respectably_and_still_lost_everything():
     assert body["underwriting"]["irr"] > 0.05
     assert body["outcome"]["realised_moic"] == 0.0
     assert BY_SLUG["txu-kkr-tpg-2007"].verdict == "wipeout"
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_every_break_is_explained(slug):
+    """A liquidity break with no account of the year is a dead end. If a column
+    breaks, it must say what happened, what the engine computed, and what the
+    engine could not see — and the third is the one that stops the other two
+    being read as a claim the model got it right."""
+    body = client.get(f"/api/cases/{slug}").json()
+    for column in ("underwriting", "realised"):
+        col = body[column]
+        if col is None or not col["failed"]:
+            continue
+        note = col["break_note"]
+        assert note is not None, f"{slug}/{column} breaks with no explanation"
+        assert note["year"] == col["breaks_in_year"], (
+            f"{slug}/{column}: note describes year {note['year']} but the engine "
+            f"breaks in year {col['breaks_in_year']}"
+        )
+        for field in ("what_happened", "what_the_engine_saw", "what_the_engine_cannot_see"):
+            assert len(note[field]) > 120, f"{slug}/{column}: {field} is too thin to be useful"
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+def test_no_break_note_without_a_break(case):
+    """The inverse: an explanation for a break that no longer happens is stale
+    documentation, and worse than none, because it describes a run the reader
+    cannot see."""
+    from lbo_engine import run_lbo
+
+    for note in case.break_notes:
+        assumptions = getattr(case, note.column)
+        assert assumptions is not None
+        with pytest.raises(ValueError):
+            run_lbo(assumptions)

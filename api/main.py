@@ -368,6 +368,21 @@ def _outcome(case: CaseStudy) -> dict:
     }
 
 
+def _break_note(case: CaseStudy, column: str) -> dict | None:
+    """The account of the year this column breaks, if it breaks."""
+    note = next((b for b in case.break_notes if b.column == column), None)
+    if note is None:
+        return None
+    return {
+        "year": note.year,
+        "calendar": note.calendar,
+        "headline": note.headline,
+        "what_happened": note.what_happened,
+        "what_the_engine_saw": note.what_the_engine_saw,
+        "what_the_engine_cannot_see": note.what_the_engine_cannot_see,
+    }
+
+
 def _summary(case: CaseStudy) -> dict:
     """The index-card view: enough to choose a case, not enough to need a run."""
     a = case.underwriting
@@ -446,12 +461,14 @@ def case_detail(slug: str) -> dict:
         "underwriting": {
             "assumptions": case.underwriting.model_dump(),
             "note": case.column_notes.get("underwriting"),
+            "break_note": _break_note(case, "underwriting"),
             **_replay(case.underwriting),
         },
         "realised": (
             {
                 "assumptions": case.realised.model_dump(),
                 "note": case.column_notes.get("realised"),
+                "break_note": _break_note(case, "realised"),
                 **_replay(case.realised),
             }
             if case.realised is not None

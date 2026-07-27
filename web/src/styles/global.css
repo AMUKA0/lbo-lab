@@ -1573,3 +1573,67 @@ table.data .row-label {
 .tone-watch .lc-body     { border-left-color: var(--brass); }
 .tone-bad .lc-marker     { color: var(--rust); }
 .tone-bad .lc-body       { border-left-color: var(--rust); }
+
+/* ==========================================================================
+   Break notes
+   --------------------------------------------------------------------------
+   Three claims about the year a structure gave way, and they must not be read
+   as one paragraph: what actually happened, what the model computed, and what
+   the model could not see. Collapsing them is how a model's limits disappear
+   into a narrative, so each gets its own panel and its own accent — fact in
+   neutral, model output in pine, the blind spot in brass.
+   ========================================================================== */
+
+.break-note {
+  margin: 0 0 var(--s6);
+  padding: var(--s5);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  background: var(--raise);
+}
+
+.bn-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--edge);
+  margin-bottom: var(--s4);
+}
+.bn-year {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--brass);
+}
+.bn-head h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.bn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s5);
+}
+
+.bn-panel h5 {
+  margin: 0 0 var(--s2);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding-left: var(--s3);
+  border-left: 2px solid var(--edge);
+}
+.bn-panel p {
+  margin: 0;
+  padding-left: var(--s3);
+  font-size: 0.85rem;
+  line-height: 1.62;
+  color: var(--text-2);
+}
+
+.bn-fact h5  { border-left-color: var(--text-3); color: var(--text-2); }
+.bn-model h5 { border-left-color: var(--pine); color: var(--pine); }
+.bn-limit h5 { border-left-color: var(--brass); color: var(--brass); }

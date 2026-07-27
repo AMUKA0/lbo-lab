@@ -59,10 +59,25 @@ export interface CaseSummary {
   outcome: CaseOutcome;
 }
 
+/** An account of the year a column runs out of liquidity. Three separate
+ *  claims, kept apart on purpose: what actually happened, what the engine
+ *  computed, and what the engine structurally could not see — the third being
+ *  why the modelled break and the real outcome differ. */
+export interface BreakNote {
+  year: number;
+  calendar: string;
+  headline: string;
+  what_happened: string;
+  what_the_engine_saw: string;
+  what_the_engine_cannot_see: string;
+}
+
 export interface CaseColumn {
   assumptions: Assumptions;
   /** Read before the numbers: what this column means, where it needs interpreting. */
   note: string | null;
+  /** Present only where this column breaks. */
+  break_note: BreakNote | null;
   failed: boolean;
   message: string | null;
   /** The year the structure runs out of liquidity, when it does. */

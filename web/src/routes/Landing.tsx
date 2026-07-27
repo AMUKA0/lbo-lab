@@ -81,7 +81,7 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="128" k="tests · golden case solved by hand" />
+          <Stat v="136" k="tests · golden case solved by hand" />
           <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
           <Stat v="1e-10" k="tolerance on the interest solve" />
