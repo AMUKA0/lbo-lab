@@ -81,7 +81,7 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="100" k="tests · golden case solved by hand" />
+          <Stat v="117" k="tests · golden case solved by hand" />
           <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
           <Stat v="1e-10" k="tolerance on the interest solve" />
@@ -138,8 +138,8 @@ export function Landing() {
               value bridge reconciles exactly, and credit stats cover the lender's view.
             </li>
             <li>
-              <strong>Known gaps</strong> — no dividend recaps, management rollover or
-              add-ons; annual periodicity and fixed rates. Each is listed in the README with
+              <strong>Known gaps</strong> — no management rollover or add-ons; annual
+              periodicity and fixed rates. Each is listed in the README with
               what it would change, because pretending they don't exist is how models lie.
             </li>
           </ul>

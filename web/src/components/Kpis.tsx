@@ -13,6 +13,7 @@ export function KpiStrip({ run }: { run: RunResult }) {
   const entryLev = run.entry_net_leverage;
   const exitLev = run.exit_net_leverage;
   const deleveraged = entryLev != null && exitLev != null ? entryLev - exitLev : null;
+  const dividends = run.bridge.dividends;
 
   return (
     <div className="kpi-strip">
@@ -25,8 +26,21 @@ export function KpiStrip({ run }: { run: RunResult }) {
       <Kpi
         k="MOIC"
         v={fmtMult(run.moic, 2)}
-        sub={`${fmtMoney(run.entry_equity)} → ${fmtMoney(run.exit_equity)}`}
+        sub={
+          dividends
+            ? `on ${fmtMoney(run.entry_equity)} in, ${fmtMoney(run.bridge.total_proceeds)} back`
+            : `${fmtMoney(run.entry_equity)} → ${fmtMoney(run.exit_equity)}`
+        }
       />
+      {/* Only when there is one. IRR and MOIC alone cannot show that capital
+          came back early, which is the entire reason a sponsor recaps. */}
+      {dividends > 0 && (
+        <Kpi
+          k="Recap dividends"
+          v={fmtMoney(dividends)}
+          sub={`${fmtPct(dividends / run.entry_equity, 0)} of the cheque, returned early`}
+        />
+      )}
       <Kpi k="Equity cheque" v={fmtMoney(run.entry_equity)} sub="at close" />
       <Kpi
         k="Entry leverage"

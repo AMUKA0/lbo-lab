@@ -10,10 +10,19 @@ the fee drag, using the conventional attribution:
   EBITDA growth       = (exit EBITDA − entry EBITDA) × entry multiple
   Multiple expansion  = (exit multiple − entry multiple) × exit EBITDA
   Deleveraging        = entry net debt − exit net debt
-  Fee drag            = −(transaction fees + financing fees + exit fees)
+  Recapitalisation    = gross incremental debt raised in dividend recaps
+  Fee drag            = −(transaction + financing + recap + exit fees)
 
-These four terms sum EXACTLY to (exit equity − entry equity) — an identity the
-test suite asserts. (The growth/multiple split has a known convention choice:
+These terms sum EXACTLY to the sponsor's total value created — exit equity plus
+recap dividends, less the entry cheque — an identity the test suite asserts.
+
+The recap line carries the **gross** debt raised, not the net dividend, and that
+is forced rather than chosen. A recap adds N to exit net debt (shrinking the
+deleveraging line by N) and F to fees, while paying the sponsor N − F. Booking
+the net dividend instead leaves the identity short by exactly the fee; booking
+the gross closes it. Note also what the line is *not*: a recap creates no
+enterprise value. It converts future equity into present cash and buys that with
+interest cost, which is why it moves IRR far more than it moves MOIC. (The growth/multiple split has a known convention choice:
 the cross term (ΔEBITDA × Δmultiple) sits in the multiple line here, the most
 common treatment.)
 """
@@ -53,25 +62,41 @@ class ReturnsBridge:
     ebitda_growth: float
     multiple_expansion: float
     deleveraging: float
+    recapitalisation: float
     fee_drag: float
     entry_equity: float
     exit_equity: float
+    dividends: float
 
     @property
     def total_value_created(self) -> float:
-        return self.ebitda_growth + self.multiple_expansion + self.deleveraging + self.fee_drag
+        return (
+            self.ebitda_growth
+            + self.multiple_expansion
+            + self.deleveraging
+            + self.recapitalisation
+            + self.fee_drag
+        )
+
+    @property
+    def total_proceeds(self) -> float:
+        """What the sponsor actually gets back: exit equity plus recap dividends."""
+        return self.exit_equity + self.dividends
 
 
 def returns_bridge(r: LBOResult) -> ReturnsBridge:
     a = r.assumptions
     su = r.sources_uses
+    recap_fees = sum(y.recap_fee for y in r.years)
     return ReturnsBridge(
         ebitda_growth=(r.exit_ebitda - a.entry_ebitda) * a.entry_multiple,
         multiple_expansion=(a.exit_multiple - a.entry_multiple) * r.exit_ebitda,
         deleveraging=r.entry_net_debt - r.exit_net_debt,
-        fee_drag=-(su.transaction_fees + su.financing_fees + r.exit_fees),
+        recapitalisation=sum(y.recap_raised for y in r.years),
+        fee_drag=-(su.transaction_fees + su.financing_fees + recap_fees + r.exit_fees),
         entry_equity=r.entry_equity,
         exit_equity=r.exit_equity,
+        dividends=r.total_dividends,
     )
 
 

@@ -82,7 +82,7 @@ class TestExitFees:
     def test_bridge_still_reconciles_with_exit_fees(self, rich_deal):
         r = run_lbo(rich_deal)
         b = returns_bridge(r)
-        assert b.total_value_created == pytest.approx(r.exit_equity - r.entry_equity, abs=1e-6)
+        assert b.total_value_created == pytest.approx(b.total_proceeds - r.entry_equity, abs=1e-6)
 
 
 class TestCircularityBreaker:

@@ -11,6 +11,7 @@ from __future__ import annotations
 from lbo_engine import (
     Assumptions,
     DebtTranche,
+    DividendRecap,
     OperatingAssumptions,
     RevolverAssumptions,
 )
@@ -92,6 +93,15 @@ def _2007(d: Assumptions) -> None:
     d.hold_years = 5
 
 
+def _recap(d: Assumptions) -> None:
+    # Deliberately identical to the base case except for the recap, so the two
+    # can be flipped between: IRR rises, MOIC does not. That is the whole
+    # lesson, and it only lands if nothing else moved.
+    d.recaps = [
+        DividendRecap(year=3, target_leverage_turns=4.5, tranche="Senior term loan")
+    ]
+
+
 PRESETS = [
     {
         "name": "Base case",
@@ -107,6 +117,11 @@ PRESETS = [
         "Aggressive underwrite",
         "13× entry, seven turns, multiple expansion assumed. Watch what the guardrails say.",
         _aggressive,
+    ),
+    _preset(
+        "Dividend recap",
+        "The base case with one change: re-lever to 4.5× in year three and pay the proceeds out. Watch IRR rise while MOIC does not.",
+        _recap,
     ),
     _preset(
         "2007 vintage",

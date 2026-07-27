@@ -78,6 +78,12 @@ class YearOut(BaseModel):
     closing_cash: float
     total_debt_closing: float
     net_debt_closing: float
+    # Dividend recap, if one fell in this year. `raised` is gross incremental
+    # debt; `dividend` is what reached the sponsor after the financing fee.
+    recap_target: float
+    recap_raised: float
+    recap_fee: float
+    recap_dividend: float
     interest_iterations: int
     tranches: list[TrancheYearOut]
 
@@ -98,12 +104,17 @@ class BridgeOut(BaseModel):
     ebitda_growth: float
     multiple_expansion: float
     deleveraging: float
+    recapitalisation: float
     fee_drag: float
     entry_equity: float
     exit_equity: float
+    dividends: float
+    total_proceeds: float
     total_value_created: float
     # The identity the test suite asserts, surfaced so the UI can prove it on
-    # screen rather than asking to be trusted.
+    # screen rather than asking to be trusted. Note it reconciles against TOTAL
+    # proceeds — exit equity plus recap dividends — not against exit equity
+    # alone, which would be short by every dollar taken out early.
     equity_gain: float
     reconciliation_error: float
 
@@ -193,6 +204,10 @@ def year_out(y: YearRow) -> YearOut:
         closing_cash=y.closing_cash,
         total_debt_closing=y.total_debt_closing,
         net_debt_closing=y.total_debt_closing - y.closing_cash,
+        recap_target=y.recap_target,
+        recap_raised=y.recap_raised,
+        recap_fee=y.recap_fee,
+        recap_dividend=y.recap_dividend,
         interest_iterations=y.interest_iterations,
         tranches=[
             TrancheYearOut(
@@ -210,14 +225,17 @@ def year_out(y: YearRow) -> YearOut:
 
 
 def bridge_out(b: ReturnsBridge) -> BridgeOut:
-    gain = b.exit_equity - b.entry_equity
+    gain = b.total_proceeds - b.entry_equity
     return BridgeOut(
         ebitda_growth=b.ebitda_growth,
         multiple_expansion=b.multiple_expansion,
         deleveraging=b.deleveraging,
+        recapitalisation=b.recapitalisation,
         fee_drag=b.fee_drag,
         entry_equity=b.entry_equity,
         exit_equity=b.exit_equity,
+        dividends=b.dividends,
+        total_proceeds=b.total_proceeds,
         total_value_created=b.total_value_created,
         equity_gain=gain,
         reconciliation_error=b.total_value_created - gain,

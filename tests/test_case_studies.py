@@ -73,9 +73,12 @@ def test_underwriting_never_assumes_multiple_expansion(case):
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
 def test_the_realised_column_shares_the_structure(case):
-    """Only the operating path and the exit may differ between the two columns.
-    If the capital structure moved as well, the comparison would be measuring two
-    things at once and the 'model fed reality' claim would be empty."""
+    """Only the operating path, the exit and any recaps may differ between the
+    two columns. If the capital *structure* moved as well, the comparison would
+    be measuring two things at once and the 'model fed reality' claim would be
+    empty. Recaps are exempt because a recap is an event that happened, not an
+    underwriting assumption — HCA's 2010 dividend belongs in the realised column
+    and nowhere near the one built from pre-close information."""
     if case.realised is None:
         return
     u, r = case.underwriting, case.realised

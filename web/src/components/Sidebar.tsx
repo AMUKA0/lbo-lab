@@ -14,9 +14,12 @@
  * - **Dynamic tranches.** The capital structure is a list, not a fixed senior
  *   and mezz. Unitranche, second lien, a PIK toggle — the engine already
  *   supports any stack, so the UI should too.
+ * - **Dividend recaps.** Sized the way a sponsor actually instructs one — a
+ *   target leverage to re-lever back to, rather than a dollar amount someone
+ *   has to work out by hand first.
  */
 
-import type { Assumptions, Benchmark, DebtTranche, Preset } from "../api/types";
+import type { Assumptions, Benchmark, DebtTranche, DividendRecap, Preset } from "../api/types";
 import { fmtMoney, fmtMult, fmtPct } from "../lib/format";
 import { Group, NumberField, SliderField, ToggleField } from "./primitives";
 
@@ -251,6 +254,97 @@ export function Sidebar({
           onChange={(v) => edit((n) => (n.cash_sweep_pct = v))}
           note="Share of excess cash applied to optional prepayment, senior-first. Credit agreements typically require 50–100%."
         />
+      </Group>
+
+      {/* ------------------------------------------------------------ recaps */}
+      <Group
+        title={
+          a.recaps.length
+            ? `Dividend recaps — ${a.recaps.length}`
+            : "Dividend recaps"
+        }
+      >
+        <p className="field-note" style={{ marginTop: 0 }}>
+          Raise debt against the company and pay the proceeds out. This creates no
+          enterprise value — it converts future equity into present cash and buys that
+          with interest cost, which is why it moves IRR far more than MOIC. Watch both
+          tiles as you add one.
+        </p>
+
+        {a.recaps.map((recap, i) => (
+          <div className="tranche-card" key={i}>
+            <div className="tranche-head">
+              <strong>Year {recap.year}</strong>
+              <button
+                className="btn-ghost"
+                onClick={() => edit((n) => n.recaps.splice(i, 1))}
+                aria-label={`Remove the year ${recap.year} recap`}
+              >
+                Remove
+              </button>
+            </div>
+            <SliderField
+              label="Year"
+              value={recap.year}
+              min={1}
+              max={a.hold_years}
+              step={1}
+              format={(v) => `Year ${v.toFixed(0)}`}
+              onChange={(v) => edit((n) => (n.recaps[i].year = v))}
+              note="Earlier is worth more: the same cash returned sooner is a higher IRR."
+            />
+            <SliderField
+              label="Re-lever to"
+              value={recap.target_leverage_turns ?? totalTurns}
+              min={0.5}
+              max={9}
+              step={0.1}
+              format={(v) => fmtMult(v, 1)}
+              onChange={(v) =>
+                edit((n) => {
+                  n.recaps[i].target_leverage_turns = v;
+                  n.recaps[i].amount = null;
+                })
+              }
+              note="Net debt is levered back up to this multiple of that year's EBITDA. If the company is already above it, nothing is raised and the schedule says so."
+            />
+            <SliderField
+              label="Financing fee on new debt"
+              value={recap.financing_fee_pct}
+              min={0}
+              max={0.05}
+              step={0.0025}
+              format={(v) => fmtPct(v, 2)}
+              onChange={(v) => edit((n) => (n.recaps[i].financing_fee_pct = v))}
+            />
+          </div>
+        ))}
+
+        <button
+          className="btn-ghost"
+          disabled={a.recaps.length >= a.hold_years}
+          onClick={() =>
+            edit((n) => {
+              // First year not already spoken for — the engine allows at most
+              // one recap per year.
+              const taken = new Set(n.recaps.map((r) => r.year));
+              const year = Array.from({ length: n.hold_years }, (_, k) => k + 1).find(
+                (y) => !taken.has(y),
+              );
+              if (year === undefined) return;
+              n.recaps.push({
+                year,
+                target_leverage_turns: Math.max(1, totalTurns - 1),
+                amount: null,
+                tranche: null,
+                financing_fee_pct: 0.02,
+              } as DividendRecap);
+              n.recaps.sort((x, y) => x.year - y.year);
+            })
+          }
+        >
+          + Add a recap
+        </button>
       </Group>
 
       {/* -------------------------------------------------------------- fees */}

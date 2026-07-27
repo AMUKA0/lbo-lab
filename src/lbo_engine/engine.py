@@ -20,6 +20,13 @@ For each projection year, in this order:
   6. PIK interest accretes to the tranche balance (accrued on the opening
      balance, standard compounding convention).
 
+  7. Dividend recapitalisation, if one falls in this year: incremental debt is
+     raised against a named tranche and the proceeds, net of a financing fee,
+     are paid out to the sponsor. Treated as a YEAR-END event — the money
+     existed for none of that year, so it accrues no interest until the next
+     one, and the within-year interest solve stays a single circularity rather
+     than two.
+
 At exit: exit EV = exit multiple × terminal EBITDA; equity = EV − net debt.
 """
 
@@ -70,6 +77,15 @@ class YearRow:
     revolver_closing: float
     opening_cash: float
     closing_cash: float
+    # Dividend recap, if one falls in this year. `raised` is the gross
+    # incremental debt; `dividend` is what reaches the sponsor after the
+    # financing fee. A target that would require *repaying* debt rather than
+    # raising it leaves `raised` at zero — reported rather than silently
+    # rounded away, so the UI can say the recap was not fundable.
+    recap_target: float = 0.0
+    recap_raised: float = 0.0
+    recap_fee: float = 0.0
+    recap_dividend: float = 0.0
     tranches: dict[str, TrancheYear] = field(default_factory=dict)
     interest_iterations: int = 0
 
@@ -98,17 +114,36 @@ class LBOResult:
         return self.sources_uses.total_debt - self.sources_uses.cash_to_balance_sheet
 
     @property
+    def dividends(self) -> list[float]:
+        """Recap proceeds reaching the sponsor, by year."""
+        return [y.recap_dividend for y in self.years]
+
+    @property
+    def total_dividends(self) -> float:
+        return sum(self.dividends)
+
+    @property
     def moic(self) -> float:
-        return self.exit_equity / self.entry_equity
+        """On TOTAL proceeds — recap dividends plus exit equity.
+
+        A recap that returned half the cheque in year three is capital the
+        sponsor genuinely has back; excluding it would understate the multiple
+        on every deal that used one.
+        """
+        return (self.total_dividends + self.exit_equity) / self.entry_equity
 
     @property
     def equity_cash_flows(self) -> list[float]:
-        """Sponsor cash flows: cheque out at close, proceeds at exit, nothing between.
+        """Sponsor cash flows: cheque out at close, recap dividends in the years
+        they are paid, exit proceeds at the end.
 
-        (Dividend recaps would add interim flows; not modelled in v1.)
+        The interim flows are the whole point of a recap — the same total
+        returned earlier is a materially higher IRR.
         """
         flows = [-self.entry_equity] + [0.0] * self.assumptions.hold_years
-        flows[-1] = self.exit_equity
+        for y in self.years:
+            flows[y.year] += y.recap_dividend
+        flows[-1] += self.exit_equity
         return flows
 
     def to_dataframe(self):
@@ -133,6 +168,8 @@ class LBOResult:
                 "cads": y.cash_available_for_debt_service,
                 "revolver_closing": y.revolver_closing,
                 "closing_cash": y.closing_cash,
+                "recap_debt_raised": y.recap_raised,
+                "recap_dividend": y.recap_dividend,
                 "total_debt": y.total_debt_closing,
             }
             for name, t in y.tranches.items():
@@ -172,6 +209,13 @@ def run_lbo(a: Assumptions) -> LBOResult:
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening,
         )
+
+        # Year-end dividend recapitalisation, applied after the year is solved so
+        # the new debt accrues no interest until the following year.
+        recap = a.recap_for(year_no)
+        if recap is not None:
+            fee_amort += _apply_recap(a, recap, row, ebitda) / a.financing_fee_tenor_years
+
         years.append(row)
 
         tranche_opening = {name: t.closing for name, t in row.tranches.items()}
@@ -198,6 +242,42 @@ def run_lbo(a: Assumptions) -> LBOResult:
         exit_fees=exit_fees,
         exit_equity=exit_equity,
     )
+
+
+def _apply_recap(a: Assumptions, recap, row: YearRow, ebitda: float) -> float:
+    """Raise incremental debt at year end and dividend the net proceeds out.
+
+    Mutates `row` in place and returns the financing fee, which the caller adds
+    to the amortising pool (ASC 835-30 again — the fee on new debt amortises
+    over the facility tenor like any other, it does not hit the P&L at once).
+
+    Sizing by target leverage is the instruction a sponsor actually gives:
+    re-lever to N turns and take out whatever that raises. If the company is
+    already below the target — or the target is above where it already sits —
+    the recap raises nothing, and that is recorded rather than hidden.
+    """
+    net_debt = row.total_debt_closing - row.closing_cash
+    if recap.amount is not None:
+        target = recap.amount
+        raised = recap.amount
+    else:
+        target = recap.target_leverage_turns * ebitda
+        # Only the *incremental* debt is raised; a target below current leverage
+        # would mean repaying, which is not a recap.
+        raised = max(target - net_debt, 0.0)
+
+    row.recap_target = target
+    if raised <= 0.0:
+        return 0.0
+
+    name = recap.tranche or a.tranches[0].name
+    row.tranches[name].closing += raised
+
+    fee = recap.financing_fee_pct * raised
+    row.recap_raised = raised
+    row.recap_fee = fee
+    row.recap_dividend = raised - fee
+    return fee
 
 
 def _solve_year(

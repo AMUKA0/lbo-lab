@@ -69,8 +69,13 @@ export function BridgeWaterfall({ bridge }: { bridge: Bridge }) {
     { name: "EBITDA growth", delta: bridge.ebitda_growth, anchor: false },
     { name: "Multiple", delta: bridge.multiple_expansion, anchor: false },
     { name: "Debt paydown", delta: bridge.deleveraging, anchor: false },
+    // Only drawn when a recap happened, so the common case keeps a five-bar
+    // waterfall rather than carrying a permanent zero-height step.
+    ...(bridge.recapitalisation !== 0
+      ? [{ name: "Recap", delta: bridge.recapitalisation, anchor: false }]
+      : []),
     { name: "Fees", delta: bridge.fee_drag, anchor: false },
-    { name: "Exit equity", delta: bridge.exit_equity, anchor: true },
+    { name: "Total proceeds", delta: bridge.total_proceeds, anchor: true },
   ];
 
   let cursor = 0;

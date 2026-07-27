@@ -33,12 +33,25 @@ export interface OperatingAssumptions {
   tax_rate: number;
 }
 
+/** A dividend recapitalisation. Sized EITHER by a target leverage — the way a
+ *  sponsor actually instructs one — or by a fixed amount; the engine rejects a
+ *  payload carrying both or neither. */
+export interface DividendRecap {
+  year: number;
+  target_leverage_turns: number | null;
+  amount: number | null;
+  /** Tranche the new debt joins; null defaults to the most senior. */
+  tranche: string | null;
+  financing_fee_pct: number;
+}
+
 export interface Assumptions {
   entry_ebitda: number;
   entry_multiple: number;
   operating: OperatingAssumptions;
   tranches: DebtTranche[];
   revolver: RevolverAssumptions;
+  recaps: DividendRecap[];
   transaction_fee_pct_ev: number;
   financing_fee_pct_debt: number;
   financing_fee_tenor_years: number;
@@ -89,6 +102,14 @@ export interface YearRow {
   closing_cash: number;
   total_debt_closing: number;
   net_debt_closing: number;
+  /** Dividend recap in this year, if any. `raised` is gross incremental debt;
+   *  `dividend` is what reached the sponsor after the financing fee. A target
+   *  above current leverage leaves `raised` at zero — the recap was not
+   *  fundable, which is reported rather than hidden. */
+  recap_target: number;
+  recap_raised: number;
+  recap_fee: number;
+  recap_dividend: number;
   interest_iterations: number;
   tranches: TrancheYear[];
 }
@@ -109,9 +130,15 @@ export interface Bridge {
   ebitda_growth: number;
   multiple_expansion: number;
   deleveraging: number;
+  /** GROSS incremental debt raised in recaps — not the net dividend. The net
+   *  would leave the identity short by exactly the financing fee. */
+  recapitalisation: number;
   fee_drag: number;
   entry_equity: number;
   exit_equity: number;
+  dividends: number;
+  /** Exit equity plus recap dividends: what the sponsor actually got back. */
+  total_proceeds: number;
   total_value_created: number;
   equity_gain: number;
   /** Asserted to be zero by the test suite; surfaced so the UI can prove it. */

@@ -4,29 +4,26 @@
     {
       "name": "api",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "api.main:app", "--reload", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "api.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "web"],
-      "port": 5173
-    },
-    {
-      "name": "streamlit-legacy",
-      "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": [
-        "-m",
-        "streamlit",
         "run",
-        "Home.py",
-        "--server.headless",
-        "true",
-        "--server.port",
-        "8501"
+        "dev",
+        "--prefix",
+        "web"
       ],
-      "port": 8501
+      "port": 5173
     }
   ]
 }

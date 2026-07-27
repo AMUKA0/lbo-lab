@@ -8,7 +8,7 @@ A deal-level leveraged-buyout model with a web interface. Three layers, delibera
 | `api/` | A thin FastAPI transport over the engine. **No financial logic lives here.** | The request contract *is* the engine's own Pydantic model, so the API schema and the model cannot drift apart. |
 | `web/` | A React + TypeScript client (Vite, Recharts). | The interface can be rebuilt without touching a single tested calculation. |
 
-A Streamlit app (`Home.py`, `pages/`) remains in the repo as the original local lab. It calls the same engine, which is the point: two independent front ends, one tested model.
+The engine has no knowledge of any of this. It was written and tested before either interface existed, and the test suite runs without FastAPI or Node installed at all.
 
 ## Running it
 
@@ -41,7 +41,7 @@ The interactive API schema is at `/api/docs`.
 pytest
 ```
 
-100 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+117 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## The case-study library
 
@@ -65,7 +65,9 @@ Three of the eight runs hit a **liquidity break**: operating cash flow stops cov
 - **RJR breaks on its own underwriting, in year two.** At the reported 87% debt the modelled cheque lands at $3.9bn against KKR's ~$3.2bn, and cash interest plus PIK accrual then consumes close to the whole of a $3.1bn EBITDA. Historically exact: the deal was never self-financing from operations — it depended on the divestitures clearing, and still needed a $1.7bn equity injection in 1990.
 - **TXU underwrites at a low-double-digit IRR** and still lost $8.3bn. Nothing in the guardrails, the tornado or the sensitivity grid flags it, because every one of those varies inputs the model contains — and the input that destroyed the deal, the price of natural gas, was not one of them.
 
-Where the engine structurally cannot follow a deal — RJR's divestitures and preferred layer, HCA's dividend recaps and IPO dilution, TXU's gas hedges, Hilton's discounted debt buyback and staged sell-down — it is stated on the page rather than closed by tuning an assumption until the answer looks right.
+Where the engine structurally cannot follow a deal — RJR's divestitures and preferred layer, HCA's IPO dilution, TXU's gas hedges, Hilton's discounted debt buyback and staged sell-down — it is stated on the page rather than closed by tuning an assumption until the answer looks right.
+
+One of those caveats has since been closed rather than restated. HCA's realised column originally carried "the engine has no recap mechanic"; the engine now has one, and that column models HCA's 2010 dividend recapitalisation sized to the ~$4.3bn actually paid. The case exposed the gap and the gap got fixed — which is the point of building the library before finishing the engine.
 
 ## Methodology — and where it matches industry practice
 
@@ -85,7 +87,8 @@ The engine follows standard sponsor-model conventions throughout:
 | **Exit** | Exit EV = exit multiple × terminal EBITDA; exit equity = EV − net debt (floored at zero — limited liability). |
 | **Returns** | MOIC = exit equity / equity cheque. IRR by bisection on the sponsor's cash-flow vector. |
 | **Credit stats** | Net leverage, EBITDA/interest and (EBITDA−capex)/interest coverage, and FCF conversion by year — the covenant-style ratios a credit committee actually watches. |
-| **Attribution** | The value-creation bridge — (ΔEBITDA × entry multiple) + (Δmultiple × exit EBITDA) + net-debt paydown − all fees — **sums exactly to the equity gain**; the test suite asserts the identity. The ΔEBITDA×Δmultiple cross term sits in the multiple line (the most common convention). |
+| **Dividend recaps** | Incremental debt raised against the company, proceeds paid to the sponsor. Sized by a **target leverage** (the instruction a sponsor actually gives) or a fixed amount. Treated as a **year-end event**, so the new debt accrues no interest in the year it is raised — it existed for none of it — which also keeps the within-year interest solve to a single circularity. MOIC counts the dividends; the IRR vector receives them in the year they are paid. |
+| **Attribution** | The value-creation bridge — (ΔEBITDA × entry multiple) + (Δmultiple × exit EBITDA) + net-debt paydown + gross recap debt raised − all fees — **sums exactly to the sponsor's total proceeds** (exit equity plus recap dividends) less the entry cheque; the test suite asserts the identity. The recap line carries **gross** debt raised rather than the net dividend, and that is forced rather than chosen: the net leaves the identity short by exactly the financing fee. The ΔEBITDA×Δmultiple cross term sits in the multiple line (the most common convention). |
 
 ### Sources consulted
 
@@ -105,7 +108,6 @@ Stated openly, because pretending they don't exist is how models lie. These are 
 
 **Genuine gaps, and what they'd change**
 
-- **No dividend recapitalisations** — a recap pulls cash forward and materially lifts IRR while leaving MOIC roughly flat. This is the largest missing mechanic for modelling real sponsor behaviour.
 - **No management rollover, option pool, or transaction bonuses** — these dilute sponsor proceeds at exit, typically by low-single-digit percentages of equity value.
 - **No add-on acquisitions** — buy-and-build is a major value-creation lever the model can't express.
 - **Single-company, no segment build** — revenue is one line, not a mix.

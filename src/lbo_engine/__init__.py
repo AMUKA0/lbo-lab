@@ -6,6 +6,7 @@ Assumptions in, fully populated model out. No I/O, no state.
 from lbo_engine.assumptions import (
     Assumptions,
     DebtTranche,
+    DividendRecap,
     OperatingAssumptions,
     RevolverAssumptions,
 )
@@ -16,6 +17,7 @@ from lbo_engine.sources_uses import SourcesAndUses, build_sources_and_uses
 __all__ = [
     "Assumptions",
     "DebtTranche",
+    "DividendRecap",
     "OperatingAssumptions",
     "RevolverAssumptions",
     "SourcesAndUses",

@@ -75,7 +75,10 @@ class TestInvariants:
     def test_bridge_sums_exactly_to_equity_gain(self, rich_deal):
         r = run_lbo(rich_deal)
         b = returns_bridge(r)
-        assert b.total_value_created == pytest.approx(r.exit_equity - r.entry_equity, abs=1e-6)
+        # The general identity: the bridge sums to the sponsor's TOTAL proceeds
+        # (exit equity plus any recap dividends) less the entry cheque. With no
+        # recaps this reduces to the equity gain.
+        assert b.total_value_created == pytest.approx(b.total_proceeds - r.entry_equity, abs=1e-6)
 
     def test_mandatory_amort_is_pct_of_original_principal(self, rich_deal):
         r = run_lbo(rich_deal)

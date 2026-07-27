@@ -40,6 +40,7 @@ from typing import Literal
 from lbo_engine import (
     Assumptions,
     DebtTranche,
+    DividendRecap,
     OperatingAssumptions,
     RevolverAssumptions,
 )
@@ -510,6 +511,9 @@ HCA = CaseStudy(
         # company that in reality never deleveraged, and would inflate terminal
         # equity accordingly. A 25% sweep reproduces the actual debt path.
         cash_sweep_pct=0.25,
+        # The 2010 recapitalisations, sized to the ~$4.3bn HCA actually paid out
+        # that year. Year 4 of a hold that closed in November 2006 is 2010.
+        recaps=[DividendRecap(year=4, amount=4300.0, financing_fee_pct=0.02)],
         # Exit at the March 2011 IPO rather than at the 2016 full exit. The IPO is
         # a real, dated liquidity event with an observable equity value, so the
         # comparison is like-for-like. Running to 2016 compares a whole-equity
@@ -546,13 +550,12 @@ HCA = CaseStudy(
                "these two points with a plausible path between them.", "hca-fortune"),
     ],
     model_caveats=[
-        "This deal is the clearest illustration of the engine's largest documented gap. "
-        "The sponsors took roughly $4.5–5bn out in dividend recapitalisations from 2010 "
-        "onwards — they had nearly recouped the entire $5.3bn cheque before the IPO. The "
-        "engine has no recap mechanic, so that cash sits on the balance sheet and leaves "
-        "at exit instead. It arrives in the right total and the wrong year, which "
-        "understates IRR: a dollar returned in year four is worth considerably more than "
-        "the same dollar in year five.",
+        "The recapitalisation is modelled as a single year-four event, but HCA's actual "
+        "payouts were staged across 2010 and beyond. Compressing them into one date "
+        "slightly overstates IRR, because part of that cash genuinely arrived later.",
+        "Modelled 2010 debt overshoots the reported figure by roughly $2.9bn once the "
+        "full dividend is paid — see the column note. The dividend total is the better-"
+        "sourced of the two facts, so it is the one the model is calibrated to.",
         "The sponsors were diluted at the IPO and did not own 100% of the equity "
         "modelled here. Exiting at the IPO date keeps the comparison honest, but the "
         "modelled exit equity is a whole-company figure and the reported multiple is a "
@@ -597,12 +600,17 @@ HCA = CaseStudy(
             "equity value, so the comparison is like-for-like; running to 2016 would "
             "compare a whole-equity single-exit MOIC against a sponsor return that was "
             "diluted at the IPO and then sold down over five years, which are two "
-            "different measurements. Three outputs can be checked against reported "
-            "figures rather than taken on trust: modelled 2010 revenue of about "
-            "$30.3bn against $30.7bn reported, closing debt of about $26.2bn against "
-            "$28.2bn, and exit equity of roughly $18.7bn against an IPO that valued "
-            "the company near $15.8bn. The residual gap is the dividend "
-            "recapitalisations, which the engine cannot express."
+            "different measurements. It also now carries HCA's 2010 dividend "
+            "recapitalisation, sized to the ~$4.3bn actually paid — the mechanic this "
+            "case originally existed to flag as missing. "
+            "Two outputs can be checked rather than taken on trust: modelled 2010 "
+            "revenue of about $30.3bn against $30.7bn reported, and exit equity of "
+            "roughly $14.2bn against an IPO that valued the company near $15.8bn. "
+            "One cannot: modelled 2010 debt lands at $31.1bn against $28.2bn reported. "
+            "The model can match the reported dividends or the reported debt but not "
+            "both, and the gap is informative rather than embarrassing — it says this "
+            "operating path generates slightly less debt capacity than HCA actually "
+            "had, so the margin assumptions here are mildly conservative."
         ),
     },
 )

@@ -208,6 +208,15 @@ export function ScheduleTable({ run }: { run: RunResult }) {
     ]),
     { label: "Revolver draw", get: (y) => y.revolver_draw, indent: true },
     { label: "Revolver repayment", get: (y) => -y.revolver_repayment, indent: true },
+    // Only shown when the deal actually has one, so an ordinary deal's schedule
+    // doesn't carry three permanently empty rows.
+    ...(run.years.some((y) => y.recap_raised !== 0)
+      ? ([
+          { label: "Recap debt raised", get: (y) => y.recap_raised, indent: true },
+          { label: "Recap financing fee", get: (y) => -y.recap_fee, indent: true },
+          { label: "Dividend to sponsor", get: (y) => y.recap_dividend, emphasis: true },
+        ] as Row[])
+      : []),
   ];
 
   const balances: Row[] = [
@@ -393,7 +402,10 @@ export function BridgeTable({ run }: { run: RunResult }) {
     ["EBITDA growth × entry multiple", b.ebitda_growth],
     ["Multiple change × exit EBITDA", b.multiple_expansion],
     ["Net debt paydown", b.deleveraging],
-    ["Fees (entry, financing, exit)", b.fee_drag],
+    ...(b.recapitalisation !== 0
+      ? ([["Recap debt raised (gross)", b.recapitalisation]] as [string, number][])
+      : []),
+    ["Fees (entry, financing, recap, exit)", b.fee_drag],
   ];
   return (
     <table className="data" style={{ marginTop: 8 }}>
@@ -414,8 +426,19 @@ export function BridgeTable({ run }: { run: RunResult }) {
             </td>
           </tr>
         ))}
+        {b.dividends !== 0 && (
+          <tr>
+            <td className="row-label mute" style={{ fontSize: "0.8rem" }}>
+              of which returned early as recap dividends
+            </td>
+            <td className="mute">{fmtSigned(b.dividends)}</td>
+            <td />
+          </tr>
+        )}
         <tr className="total">
-          <td className="row-label">Equity gain</td>
+          <td className="row-label">
+            {b.dividends !== 0 ? "Total value created" : "Equity gain"}
+          </td>
           <td>{fmtSigned(b.equity_gain)}</td>
           <td className="mute">100%</td>
         </tr>
