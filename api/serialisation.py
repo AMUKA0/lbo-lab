@@ -48,6 +48,7 @@ class TrancheYearOut(BaseModel):
     mandatory_repayment: float
     sweep_repayment: float
     closing: float
+    pik_elected: bool
 
 
 class YearOut(BaseModel):
@@ -78,6 +79,8 @@ class YearOut(BaseModel):
     closing_cash: float
     total_debt_closing: float
     net_debt_closing: float
+    # Tranches on which the PIK toggle was elected this year.
+    pik_elections: list[str]
     # Dividend recap, if one fell in this year. `raised` is gross incremental
     # debt; `dividend` is what reached the sponsor after the financing fee.
     recap_target: float
@@ -126,6 +129,16 @@ class FlagOut(BaseModel):
     source: str
 
 
+class LifecycleEventOut(BaseModel):
+    """One moment in the hold. Derived from the run, never computed anew."""
+
+    year: int
+    kind: str
+    title: str
+    detail: str
+    tone: str
+
+
 class CreditYearOut(BaseModel):
     year: int
     net_leverage: float | None
@@ -153,6 +166,7 @@ class RunOut(BaseModel):
     irr: float | None
     equity_cash_flows: list[float]
     bridge: BridgeOut
+    lifecycle: list[LifecycleEventOut]
     credit: list[CreditYearOut]
     flags: list[FlagOut]
     # True when the sponsor is wiped out; IRR/MOIC are null and the UI says so.
@@ -204,6 +218,7 @@ def year_out(y: YearRow) -> YearOut:
         closing_cash=y.closing_cash,
         total_debt_closing=y.total_debt_closing,
         net_debt_closing=y.total_debt_closing - y.closing_cash,
+        pik_elections=list(y.pik_elections),
         recap_target=y.recap_target,
         recap_raised=y.recap_raised,
         recap_fee=y.recap_fee,
@@ -218,6 +233,7 @@ def year_out(y: YearRow) -> YearOut:
                 mandatory_repayment=t.mandatory_repayment,
                 sweep_repayment=t.sweep_repayment,
                 closing=t.closing,
+                pik_elected=t.pik_elected,
             )
             for name, t in y.tranches.items()
         ],
@@ -255,6 +271,7 @@ def run_out(r: LBOResult, flags: list[Flag], credit_records: list[dict]) -> RunO
     except ValueError:
         irr_value = None
 
+    from lbo_engine.analysis import lifecycle
     from lbo_engine.returns import returns_bridge
 
     last = r.years[-1]
@@ -275,6 +292,10 @@ def run_out(r: LBOResult, flags: list[Flag], credit_records: list[dict]) -> RunO
         irr=irr_value,
         equity_cash_flows=list(r.equity_cash_flows),
         bridge=bridge_out(returns_bridge(r)),
+        lifecycle=[
+            LifecycleEventOut(year=e.year, kind=e.kind, title=e.title, detail=e.detail, tone=e.tone)
+            for e in lifecycle(r)
+        ],
         credit=[CreditYearOut(**jsonable(rec)) for rec in credit_records],
         flags=[flag_out(f) for f in flags],
         wiped_out=wiped,

@@ -1486,3 +1486,90 @@ table.data .row-label {
   .prov-row { grid-template-columns: 1fr; gap: var(--s2); }
   .case-headline-stats { gap: var(--s4); }
 }
+
+/* ==========================================================================
+   Lifecycle timeline
+   --------------------------------------------------------------------------
+   Tone is carried by a 2px left rail rather than by a filled background: a
+   flooded card for every "watch" event makes the page shout, and the detail
+   text is the part that has to stay readable. The rail is enough to scan by.
+   ========================================================================== */
+
+.lifecycle {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+/* The spine. Sits under the markers and stops short of the last one so the
+   timeline reads as finished rather than trailing off. */
+.lifecycle::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  bottom: 18px;
+  width: 1px;
+  background: var(--edge);
+}
+
+.lc-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--s4);
+  padding: 0 0 var(--s5) 0;
+}
+
+.lc-marker {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  text-align: center;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--text-3);
+  background: var(--ink);
+}
+
+.lc-body {
+  border-left: 2px solid var(--edge);
+  padding-left: var(--s4);
+}
+
+.lc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+}
+
+.lc-year {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.lc-title {
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+}
+
+.lc-detail {
+  margin: var(--s2) 0 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text-2);
+  max-width: 70ch;
+}
+
+.tone-neutral .lc-marker { color: var(--text-2); }
+.tone-good .lc-marker    { color: var(--pine); }
+.tone-good .lc-body      { border-left-color: var(--pine-deep); }
+.tone-watch .lc-marker   { color: var(--brass); }
+.tone-watch .lc-body     { border-left-color: var(--brass); }
+.tone-bad .lc-marker     { color: var(--rust); }
+.tone-bad .lc-body       { border-left-color: var(--rust); }

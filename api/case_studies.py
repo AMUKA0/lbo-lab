@@ -681,7 +681,13 @@ TXU = CaseStudy(
                 name="Senior unsecured toggle notes",
                 leverage_turns=2.16,  # ~$11.25bn
                 cash_rate=0.1025,
-                pik_rate=0.0,
+                # These were toggle notes in fact as well as in name: EFH could
+                # elect to PIK the coupon rather than pay it, at a step-up. An
+                # earlier version of this case modelled them as pure cash-pay,
+                # which removed the single most important option the structure
+                # actually had.
+                pik_toggle=True,
+                pik_toggle_premium=0.0075,
                 sweepable=False,
             ),
         ],
@@ -716,7 +722,8 @@ TXU = CaseStudy(
         tranches=[
             DebtTranche(name="Senior secured term loan B", leverage_turns=4.71, cash_rate=0.0800,
                         mandatory_amort_pct=0.01, sweepable=True),
-            DebtTranche(name="Senior unsecured toggle notes", leverage_turns=2.16, cash_rate=0.1025, sweepable=False),
+            DebtTranche(name="Senior unsecured toggle notes", leverage_turns=2.16, cash_rate=0.1025,
+                        pik_toggle=True, pik_toggle_premium=0.0075, sweepable=False),
         ],
         revolver=RevolverAssumptions(commitment=2700.0, cash_rate=0.0800, undrawn_fee=0.005),
         transaction_fee_pct_ev=0.010,

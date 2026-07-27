@@ -159,3 +159,84 @@ class TestValidation:
         ]
         with pytest.raises(ValueError, match="one dividend recap per year"):
             Assumptions.model_validate(payload)
+
+
+class TestPikToggle:
+    """The PIK toggle: the issuer's option to accrue a coupon rather than pay
+    it. Roughly a fifth of 2007 buyout firms used toggle debt, and it is the
+    single most common reason a real structure survives a year a static model
+    says it should not."""
+
+    def _toggled(self, deal: Assumptions, premium: float = 0.0075) -> Assumptions:
+        payload = deal.model_dump()
+        payload["tranches"][-1]["pik_toggle"] = True
+        payload["tranches"][-1]["pik_toggle_premium"] = premium
+        return Assumptions.model_validate(payload)
+
+    def _stressed(self, deal: Assumptions) -> Assumptions:
+        """Calibrated to the band where the option is decisive: hard enough that
+        the structure breaks without the toggle, survivable with it. At a 10%
+        trough margin even the toggle cannot save it, which is the correct
+        answer — the option buys room, not immunity."""
+        payload = deal.model_dump()
+        payload["operating"]["ebitda_margin"] = [0.192, 0.12, 0.115, 0.12, 0.13]
+        payload["revolver"]["commitment"] = 20.0
+        return Assumptions.model_validate(payload)
+
+    def test_the_toggle_buys_room_but_not_immunity(self, rich_deal):
+        """A deep enough trough breaks the structure with or without the option.
+        Modelling it as a cure-all would be its own kind of dishonesty."""
+        payload = self._stressed(rich_deal).model_dump()
+        payload["operating"]["ebitda_margin"] = [0.192, 0.10, 0.095, 0.10, 0.11]
+        hopeless = Assumptions.model_validate(payload)
+        with pytest.raises(ValueError):
+            run_lbo(self._toggled(hopeless))
+
+    def test_the_toggle_is_not_used_when_cash_is_available(self, rich_deal):
+        """Nobody PIKs a coupon they can afford — it steps the rate up and
+        compounds. A toggle that fires on a healthy deal is a bug."""
+        base = run_lbo(rich_deal)
+        toggled = run_lbo(self._toggled(rich_deal))
+
+        assert all(not y.pik_elections for y in toggled.years)
+        assert toggled.moic == pytest.approx(base.moic)
+
+    def test_the_toggle_rescues_a_year_that_would_otherwise_break(self, rich_deal):
+        stressed = self._stressed(rich_deal)
+        with pytest.raises(ValueError, match="revolver"):
+            run_lbo(stressed)
+
+        rescued = run_lbo(self._toggled(stressed))
+        assert any(y.pik_elections for y in rescued.years)
+
+    def test_electing_moves_the_coupon_from_cash_to_pik(self, rich_deal):
+        r = run_lbo(self._toggled(self._stressed(rich_deal)))
+        year = next(y for y in r.years if y.pik_elections)
+        name = year.pik_elections[0]
+
+        assert year.tranches[name].pik_elected
+        assert year.tranches[name].cash_interest == 0.0
+        assert year.tranches[name].pik_accrual > 0
+
+    def test_the_step_up_is_charged(self, rich_deal):
+        """The lender is compensated for waiting; a toggle at par would be a
+        free option and no one would write it."""
+        stressed = self._stressed(rich_deal)
+        cheap = run_lbo(self._toggled(stressed, premium=0.0))
+        dear = run_lbo(self._toggled(stressed, premium=0.05))
+
+        cheap_year = next(y for y in cheap.years if y.pik_elections)
+        dear_year = next((y for y in dear.years if y.pik_elections), None)
+        assert dear_year is not None
+        assert dear_year.pik_accrual_total > cheap_year.pik_accrual_total
+
+    def test_junior_tranches_toggle_first(self, rich_deal):
+        """Elections are searched cheapest-fix-first, and the junior paper is
+        what carries the option in a real structure."""
+        payload = self._stressed(rich_deal).model_dump()
+        for t in payload["tranches"]:
+            t["pik_toggle"] = True
+        r = run_lbo(Assumptions.model_validate(payload))
+
+        year = next(y for y in r.years if y.pik_elections)
+        assert year.pik_elections == [rich_deal.tranches[-1].name]

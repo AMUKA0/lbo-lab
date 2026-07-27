@@ -41,6 +41,18 @@ _MAX_ITERATIONS = 200
 _TOLERANCE = 1e-10
 
 
+def _rates(t, elected: frozenset[str]) -> tuple[float, float]:
+    """Effective (cash, PIK) rates for a tranche given this year's elections.
+
+    Electing the toggle moves the whole cash coupon into PIK and steps the rate
+    up — the lender is compensated for waiting. Any unconditional `pik_rate`
+    keeps accruing alongside.
+    """
+    if t.name in elected:
+        return 0.0, t.pik_rate + t.cash_rate + t.pik_toggle_premium
+    return t.cash_rate, t.pik_rate
+
+
 @dataclass
 class TrancheYear:
     opening: float
@@ -49,6 +61,9 @@ class TrancheYear:
     mandatory_repayment: float
     sweep_repayment: float
     closing: float
+    # True where the issuer elected the PIK toggle this year rather than paying
+    # cash interest it did not have.
+    pik_elected: bool = False
 
 
 @dataclass
@@ -77,6 +92,10 @@ class YearRow:
     revolver_closing: float
     opening_cash: float
     closing_cash: float
+    # Tranches on which the PIK toggle was elected this year, junior-first. A
+    # non-empty list means the structure could not pay cash interest out of
+    # operations and exercised an option rather than breaking.
+    pik_elections: list[str] = field(default_factory=list)
     # Dividend recap, if one falls in this year. `raised` is the gross
     # incremental debt; `dividend` is what reaches the sponsor after the
     # financing fee. A target that would require *repaying* debt rather than
@@ -296,9 +315,64 @@ def _solve_year(
     opening_cash: float,
     nol_opening: float,
 ) -> YearRow:
-    """Iteratively resolve the interest ↔ debt-balance circularity for one year."""
+    """Resolve one year, electing the PIK toggle only if the year cannot be paid.
+
+    The election is a *last resort*, searched junior-first: try paying everything
+    in cash; if that breaks the structure, toggle the most junior eligible
+    tranche and try again; then the next one up. This mirrors how the option is
+    actually used — nobody PIKs a coupon they can afford, because it steps the
+    rate up and compounds — and it means a toggle only ever appears in the
+    schedule at the exact moment it was needed.
+
+    Each attempt re-runs the full iterative interest solve, because changing a
+    coupon changes the circularity it sits inside.
+    """
+    eligible = [t.name for t in a.tranches if t.pik_toggle]
+    failure: ValueError | None = None
+    # 0 elections, then 1 (most junior), then 2, ... — the cheapest fix first.
+    for depth in range(len(eligible) + 1):
+        elected = frozenset(eligible[::-1][:depth])
+        try:
+            row = _solve_year_with(
+                a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
+                tranche_original, tranche_opening, revolver_opening, opening_cash,
+                nol_opening, elected,
+            )
+        except ValueError as exc:
+            failure = exc
+            continue
+        row.pik_elections = [n for n in eligible if n in elected]
+        for name in elected:
+            row.tranches[name].pik_elected = True
+        return row
+
+    assert failure is not None
+    raise failure
+
+
+def _solve_year_with(
+    a: Assumptions,
+    year_no: int,
+    revenue: float,
+    ebitda: float,
+    da: float,
+    ebit: float,
+    capex: float,
+    delta_nwc: float,
+    fee_amort: float,
+    tranche_original: dict[str, float],
+    tranche_opening: dict[str, float],
+    revolver_opening: float,
+    opening_cash: float,
+    nol_opening: float,
+    elected: frozenset[str],
+) -> YearRow:
+    """Iteratively resolve the interest ↔ debt-balance circularity for one year,
+    given a fixed set of toggle elections."""
     # Seed: interest on opening balances (first pass of the iterative calc).
-    cash_interest = {t.name: t.cash_rate * tranche_opening[t.name] for t in a.tranches}
+    cash_interest = {
+        t.name: _rates(t, elected)[0] * tranche_opening[t.name] for t in a.tranches
+    }
     revolver_interest = a.revolver.cash_rate * revolver_opening
 
     if not a.interest_on_average_balance:
@@ -307,7 +381,7 @@ def _solve_year(
         row = _build_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            nol_opening, cash_interest, revolver_interest,
+            nol_opening, cash_interest, revolver_interest, elected,
         )
         row.interest_iterations = 1
         return row
@@ -318,11 +392,13 @@ def _solve_year(
         row = _build_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            nol_opening, cash_interest, revolver_interest,
+            nol_opening, cash_interest, revolver_interest, elected,
         )
         # Recompute interest on average balances given the resulting closings.
         cash_interest = {
-            t.name: t.cash_rate * 0.5 * (tranche_opening[t.name] + row.tranches[t.name].closing)
+            t.name: _rates(t, elected)[0]
+            * 0.5
+            * (tranche_opening[t.name] + row.tranches[t.name].closing)
             for t in a.tranches
         }
         revolver_interest = a.revolver.cash_rate * 0.5 * (revolver_opening + row.revolver_closing)
@@ -356,10 +432,13 @@ def _build_year(
     nol_opening: float,
     cash_interest: dict[str, float],
     revolver_interest: float,
+    elected: frozenset[str] = frozenset(),
 ) -> YearRow:
     """One pass of the year's income statement, cash flow and debt waterfall
-    for a GIVEN interest charge."""
-    pik_accrual = {t.name: t.pik_rate * tranche_opening[t.name] for t in a.tranches}
+    for a GIVEN interest charge and set of toggle elections."""
+    pik_accrual = {
+        t.name: _rates(t, elected)[1] * tranche_opening[t.name] for t in a.tranches
+    }
     undrawn = max(a.revolver.commitment - revolver_opening, 0.0)
     undrawn_fee = a.revolver.undrawn_fee * undrawn
 

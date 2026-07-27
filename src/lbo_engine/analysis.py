@@ -5,6 +5,7 @@ with perturbed inputs. Nothing reaches inside the engine's mechanics.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -269,3 +270,162 @@ def breakeven_exit_multiple(
         else:
             hi = mid
     return 0.5 * (lo + hi)
+
+
+# --------------------------------------------------------------- lifecycle
+#
+# A deal is usually shown as a table of years, which is the right format for
+# checking arithmetic and the wrong one for understanding what happened. The
+# lifecycle re-reads the same schedule as a sequence of *events* — the moments
+# where something was decided or something gave way — so the story of the hold
+# is legible without reading twenty rows of numbers.
+#
+# Nothing here computes: every event is derived from a run the engine has
+# already produced. It is a reading of the model, not a second model.
+
+@dataclass(frozen=True)
+class LifecycleEvent:
+    year: int          # 0 = close, hold_years = exit
+    kind: str          # machine-readable; the client keys styling off this
+    title: str
+    detail: str
+    tone: str          # "neutral" | "good" | "watch" | "bad"
+
+
+# Coverage below this is where a credit committee starts paying attention, and
+# where most maintenance covenants of the modern era were actually set.
+_COVERAGE_WATCH = 2.0
+_LEVERAGE_WATCH = 6.0
+
+
+def lifecycle(result) -> list[LifecycleEvent]:
+    """The hold as a sequence of decisions and pressure points."""
+    a = result.assumptions
+    su = result.sources_uses
+    events: list[LifecycleEvent] = [
+        LifecycleEvent(
+            year=0,
+            kind="entry",
+            title="Investment",
+            detail=(
+                f"{_m(su.entry_ev)} enterprise value at {a.entry_multiple:.1f}× "
+                f"{_m(a.entry_ebitda)} of EBITDA. "
+                f"{_m(su.total_debt)} of debt across {len(a.tranches)} "
+                f"{'tranche' if len(a.tranches) == 1 else 'tranches'} "
+                f"({a.total_leverage_turns:.1f}× leverage), "
+                f"{_m(su.sponsor_equity)} of sponsor equity."
+            ),
+            tone="neutral",
+        )
+    ]
+
+    prev_revolver = 0.0
+    for y in result.years:
+        coverage = y.ebitda / y.cash_interest_total if y.cash_interest_total > 0 else None
+        leverage = (y.total_debt_closing - y.closing_cash) / y.ebitda if y.ebitda else None
+
+        if y.pik_elections:
+            names = ", ".join(y.pik_elections)
+            events.append(LifecycleEvent(
+                year=y.year, kind="pik_toggle",
+                title=f"PIK toggle elected — {names}",
+                detail=(
+                    "Operating cash flow could not cover the full cash coupon, so the "
+                    "issuer exercised its option to accrue interest to principal "
+                    "instead of defaulting. This buys the year at the cost of a higher "
+                    "balance and a stepped-up rate compounding into every year after "
+                    "it — relief, not a cure."
+                ),
+                tone="watch",
+            ))
+
+        if y.recap_raised > 0:
+            events.append(LifecycleEvent(
+                year=y.year, kind="recap",
+                title=f"Dividend recapitalisation — {_m(y.recap_dividend)} to the sponsor",
+                detail=(
+                    f"{_m(y.recap_raised)} of incremental debt raised, "
+                    f"{_m(y.recap_fee)} of financing fees, "
+                    f"{_m(y.recap_dividend)} paid out. Creates no enterprise value: it "
+                    "converts future equity into present cash and pays interest for the "
+                    "privilege, which lifts IRR while leaving MOIC flat to slightly down."
+                ),
+                tone="good",
+            ))
+        elif y.recap_target > 0:
+            events.append(LifecycleEvent(
+                year=y.year, kind="recap_unfunded",
+                title="Recap not fundable",
+                detail=(
+                    "The target leverage sits below where the company already is, so a "
+                    "recap would mean repaying debt rather than raising it. Nothing "
+                    "was paid out."
+                ),
+                tone="watch",
+            ))
+
+        if y.revolver_closing > 0 and prev_revolver == 0:
+            drawn = y.revolver_closing / a.revolver.commitment if a.revolver.commitment else 0
+            events.append(LifecycleEvent(
+                year=y.year, kind="revolver",
+                title=f"Revolver drawn — {_m(y.revolver_closing)}",
+                detail=(
+                    f"{drawn:.0%} of the commitment. The revolver is the shock absorber: "
+                    "a draw means the year's operating cash did not cover its contractual "
+                    "obligations, and the facility is finite."
+                ),
+                tone="watch",
+            ))
+        prev_revolver = y.revolver_closing
+
+        if coverage is not None and coverage < _COVERAGE_WATCH:
+            events.append(LifecycleEvent(
+                year=y.year, kind="coverage",
+                title=f"Interest coverage {coverage:.2f}×",
+                detail=(
+                    f"EBITDA covers cash interest {coverage:.2f} times, below the {_COVERAGE_WATCH:.1f}× "
+                    "level most maintenance covenants of the modern era were set at. "
+                    "Not a default in this model, which tests liquidity rather than "
+                    "covenants — but the point where a lender starts asking questions."
+                ),
+                tone="bad" if coverage < 1.0 else "watch",
+            ))
+
+        if leverage is not None and leverage > _LEVERAGE_WATCH:
+            events.append(LifecycleEvent(
+                year=y.year, kind="leverage",
+                title=f"Net leverage {leverage:.2f}×",
+                detail=(
+                    f"Above the {_LEVERAGE_WATCH:.1f}× the guardrails flag as outside the "
+                    "market band for a sustainable structure."
+                ),
+                tone="watch",
+            ))
+
+    last = result.years[-1]
+    wiped = result.exit_equity <= 0
+    events.append(LifecycleEvent(
+        year=a.hold_years,
+        kind="exit",
+        title="Exit" if not wiped else "Exit — sponsor wiped out",
+        detail=(
+            f"{a.exit_multiple:.1f}× on {_m(result.exit_ebitda)} of terminal EBITDA = "
+            f"{_m(result.exit_ev)} enterprise value, less {_m(result.exit_net_debt)} of net "
+            f"debt and {_m(result.exit_fees)} of sale costs. "
+            + (
+                "Net debt exceeds enterprise value, so the equity is worth nothing and "
+                "is floored at zero — limited liability."
+                if wiped
+                else f"{_m(result.exit_equity)} of equity proceeds."
+            )
+        ),
+        tone="bad" if wiped else "good",
+    ))
+    return events
+
+
+def _m(value: float) -> str:
+    """Money, at the scale the number deserves."""
+    if abs(value) >= 1000:
+        return f"${value / 1000:,.1f}bn"
+    return f"${value:,.0f}m"

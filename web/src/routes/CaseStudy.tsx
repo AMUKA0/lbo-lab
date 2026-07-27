@@ -19,6 +19,7 @@ import { Link, useParams } from "react-router-dom";
 import { fetchCase, type CaseColumn, type CaseDetail, type Figure } from "../api/cases";
 import { BridgeWaterfall, DebtPaydownChart, OperatingChart } from "../components/charts";
 import { Flags, KpiStrip } from "../components/Kpis";
+import { LifecycleTimeline } from "../components/Lifecycle";
 import { Card, SectionHead, Skeleton, Tabs } from "../components/primitives";
 import { BridgeTable, CreditTable, ScheduleTable, SourcesUsesTable } from "../components/tables";
 import { fmtMult, fmtPct, NA } from "../lib/format";
@@ -217,6 +218,15 @@ export function CaseStudy() {
           <>
             <Flags flags={active.partial_run.flags} />
             <Card
+              title="Lifetime of the investment — to the break"
+              note="The decisions and pressure points on the way to running out of liquidity."
+            >
+              <LifecycleTimeline
+                events={active.partial_run.lifecycle.filter((e) => e.kind !== "exit")}
+                holdYears={active.survived_years + 1}
+              />
+            </Card>
+            <Card
               title={`Schedule to the break — years 1 to ${active.survived_years}`}
               note="No exit occurred, so this carries no IRR, MOIC or exit equity. It is the operating and debt-service record up to the point the structure stopped funding itself."
             >
@@ -232,6 +242,16 @@ export function CaseStudy() {
           <>
             <KpiStrip run={active.run} />
             <Flags flags={active.run.flags} />
+
+            <Card
+              title="Lifetime of the investment"
+              note="The hold as a sequence of moments rather than a table of years — every decision the structure forced, and what each one cost."
+            >
+              <LifecycleTimeline
+                events={active.run.lifecycle}
+                holdYears={active.assumptions.hold_years}
+              />
+            </Card>
 
             <div className="grid-2">
               <Card

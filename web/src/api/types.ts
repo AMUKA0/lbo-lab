@@ -15,6 +15,10 @@ export interface DebtTranche {
   pik_rate: number;
   mandatory_amort_pct: number;
   sweepable: boolean;
+  /** Issuer may elect to PIK this coupon when cash is short — the defining
+   *  structural feature of 2006–07 vintage credit. */
+  pik_toggle: boolean;
+  pik_toggle_premium: number;
 }
 
 export interface RevolverAssumptions {
@@ -72,6 +76,25 @@ export interface TrancheYear {
   mandatory_repayment: number;
   sweep_repayment: number;
   closing: number;
+  pik_elected: boolean;
+}
+
+/** One moment in the hold — a decision taken or a constraint biting. Derived
+ *  from the run rather than computed anew. */
+export interface LifecycleEvent {
+  year: number;
+  kind:
+    | "entry"
+    | "pik_toggle"
+    | "recap"
+    | "recap_unfunded"
+    | "revolver"
+    | "coverage"
+    | "leverage"
+    | "exit";
+  title: string;
+  detail: string;
+  tone: "neutral" | "good" | "watch" | "bad";
 }
 
 export interface YearRow {
@@ -106,6 +129,7 @@ export interface YearRow {
    *  `dividend` is what reached the sponsor after the financing fee. A target
    *  above current leverage leaves `raised` at zero — the recap was not
    *  fundable, which is reported rather than hidden. */
+  pik_elections: string[];
   recap_target: number;
   recap_raised: number;
   recap_fee: number;
@@ -179,6 +203,7 @@ export interface RunResult {
   irr: number | null;
   equity_cash_flows: number[];
   bridge: Bridge;
+  lifecycle: LifecycleEvent[];
   credit: CreditYear[];
   flags: Flag[];
   wiped_out: boolean;

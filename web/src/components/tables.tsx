@@ -206,6 +206,17 @@ export function ScheduleTable({ run }: { run: RunResult }) {
         indent: true,
       },
     ]),
+    // Only when a toggle was actually elected somewhere in the hold.
+    ...(run.years.some((y) => y.pik_elections.length)
+      ? ([
+          {
+            label: "PIK toggle elected",
+            get: (y) => (y.pik_elections.length ? 1 : 0),
+            format: (v) => (v ? "yes" : "—"),
+            indent: true,
+          },
+        ] as Row[])
+      : []),
     { label: "Revolver draw", get: (y) => y.revolver_draw, indent: true },
     { label: "Revolver repayment", get: (y) => -y.revolver_repayment, indent: true },
     // Only shown when the deal actually has one, so an ordinary deal's schedule

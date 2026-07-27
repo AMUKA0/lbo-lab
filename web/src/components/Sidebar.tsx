@@ -200,6 +200,8 @@ export function Sidebar({
                 pik_rate: 0,
                 mandatory_amort_pct: 0,
                 sweepable: false,
+                pik_toggle: false,
+                pik_toggle_premium: 0.0075,
               }),
             )
           }
@@ -541,6 +543,23 @@ function TrancheEditor({
         checked={tranche.sweepable}
         onChange={(v) => onChange((t) => (t.sweepable = v))}
       />
+      <ToggleField
+        label="PIK toggle"
+        checked={tranche.pik_toggle}
+        onChange={(v) => onChange((t) => (t.pik_toggle = v))}
+      />
+      {tranche.pik_toggle && (
+        <SliderField
+          label="Toggle step-up"
+          value={tranche.pik_toggle_premium}
+          min={0}
+          max={0.03}
+          step={0.0025}
+          format={(v) => fmtPct(v, 2)}
+          onChange={(v) => onChange((t) => (t.pik_toggle_premium = v))}
+          note="Lets the issuer elect to accrue this coupon rather than pay it when cash runs short, instead of defaulting — at a stepped-up rate that compounds. Roughly a fifth of 2007 buyout firms used toggle debt. The engine elects it only when the year cannot otherwise be paid, and only on the most junior tranche that fixes it."
+        />
+      )}
     </div>
   );
 }

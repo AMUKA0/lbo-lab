@@ -35,6 +35,7 @@ import {
 } from "../components/charts";
 import { Heatmap } from "../components/Heatmap";
 import { Flags, KpiStrip } from "../components/Kpis";
+import { LifecycleTimeline } from "../components/Lifecycle";
 import {
   Card,
   Skeleton,
@@ -56,6 +57,7 @@ const TABS: TabDef[] = [
   { id: "overview", label: "Overview" },
   { id: "risk", label: "Risk & scenarios" },
   { id: "credit", label: "Credit view" },
+  { id: "lifecycle", label: "Lifecycle" },
   { id: "schedule", label: "Schedule" },
 ];
 
@@ -445,6 +447,28 @@ function SimulatorBody({
                   <div style={{ marginTop: "var(--s5)" }}>
                     <CreditTable credit={run.data.credit} />
                   </div>
+                </Card>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ----------------------------------------------------- lifecycle */}
+        {tab === "lifecycle" && (
+          <div className="tab-panel">
+            {!run.data ? (
+              <Skeleton />
+            ) : (
+              <div className={dim(run.loading)}>
+                <Card
+                  title="Lifetime of the investment"
+                  eyebrow="Close to exit"
+                  note="The same run read as a sequence of moments rather than a table of years: the cheque, the decisions taken under pressure, the constraints that started to bite, and the exit. Change the structure in the panel and watch which events appear — electing a PIK toggle, drawing the revolver, coverage falling through 2.0×."
+                >
+                  <LifecycleTimeline
+                    events={run.data.lifecycle}
+                    holdYears={settled.hold_years}
+                  />
                 </Card>
               </div>
             )}

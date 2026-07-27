@@ -38,6 +38,24 @@ class DebtTranche(BaseModel):
         default=True,
         description="Whether excess cash sweeps against this tranche (bullet/mezz often not until seniors repay)",
     )
+    # The PIK toggle — the defining structural innovation of the 2006–07 credit
+    # boom. The issuer may ELECT to stop paying cash interest and accrue it to
+    # principal instead, at a step-up in rate. In 2007 roughly a fifth of buyout
+    # firms used toggle debt and 13% of US junk-rated bond sales carried the
+    # feature.
+    #
+    # This is distinct from `pik_rate`, which accrues unconditionally. A toggle
+    # is an *option*, exercised only when cash is short — and it is the single
+    # most important reason a real structure survives a year that a static model
+    # says it should not.
+    pik_toggle: bool = Field(
+        default=False,
+        description="Issuer may elect to PIK this tranche's cash coupon when cash is short",
+    )
+    pik_toggle_premium: float = Field(
+        default=0.0075, ge=0, lt=0.1,
+        description="Rate step-up when the toggle is elected (EFH's notes stepped ~75bps)",
+    )
 
 
 class RevolverAssumptions(BaseModel):
