@@ -16,7 +16,7 @@ three things that actually matter:
 
 import pytest
 
-from lbo_engine import Assumptions, DividendRecap, run_lbo
+from lbo_engine import Assumptions, Divestiture, DividendRecap, run_lbo
 from lbo_engine.returns import returns_bridge, sponsor_irr
 
 
@@ -240,3 +240,62 @@ class TestPikToggle:
 
         year = next(y for y in r.years if y.pik_elections)
         assert year.pik_elections == [rich_deal.tranches[-1].name]
+
+
+class TestDivestitures:
+    """Asset sales. The mirror image of a recap — cash in, debt down — and the
+    mechanic without which any sum-of-the-parts underwriting reads as a deal
+    that cannot service itself."""
+
+    def _with_sale(self, deal: Assumptions, **kwargs) -> Assumptions:
+        payload = deal.model_dump()
+        payload["divestitures"] = [Divestiture(**kwargs).model_dump()]
+        return Assumptions.model_validate(payload)
+
+    def test_proceeds_repay_debt_net_of_fees(self, rich_deal):
+        base = run_lbo(rich_deal)
+        sold = run_lbo(self._with_sale(rich_deal, year=2, proceeds=200.0, fee_pct=0.01))
+
+        year = sold.years[1]
+        assert year.divestiture_proceeds == pytest.approx(198.0)
+        assert year.divestiture_fees == pytest.approx(2.0)
+        assert year.total_debt_closing < base.years[1].total_debt_closing
+
+    def test_the_stack_is_repaid_senior_first(self, rich_deal):
+        """Asset-sale proceeds are a mandatory prepayment, and that waterfall
+        runs top down — not into whichever tranche is cheapest to retire."""
+        senior, junior = (t.name for t in rich_deal.tranches)
+        sold = run_lbo(self._with_sale(rich_deal, year=1, proceeds=100.0, fee_pct=0.0))
+        base = run_lbo(rich_deal)
+
+        year, base_year = sold.years[0], base.years[0]
+        assert year.tranches[senior].closing < base_year.tranches[senior].closing
+        assert year.tranches[junior].closing == pytest.approx(
+            base_year.tranches[junior].closing
+        )
+
+    def test_a_sale_can_rescue_a_structure_that_would_not_finance(self, rich_deal):
+        """The RJR case in miniature: the structure alone does not work, the
+        structure plus the plan does."""
+        payload = rich_deal.model_dump()
+        payload["operating"]["ebitda_margin"] = [0.192, 0.115, 0.11, 0.115, 0.125]
+        payload["revolver"]["commitment"] = 15.0
+        stressed = Assumptions.model_validate(payload)
+        with pytest.raises(ValueError):
+            run_lbo(stressed)
+
+        rescued = run_lbo(self._with_sale(stressed, year=1, proceeds=180.0))
+        assert rescued.years[0].divestiture_proceeds > 0
+
+    def test_surplus_beyond_the_whole_stack_becomes_cash(self, rich_deal):
+        """Selling for more than the entire capital structure is worth must not
+        drive a balance negative."""
+        r = run_lbo(self._with_sale(rich_deal, year=1, proceeds=5000.0, fee_pct=0.0))
+        year = r.years[0]
+        assert year.total_debt_closing == pytest.approx(0.0, abs=1e-6)
+        assert year.closing_cash > 1000
+        assert all(t.closing >= 0 for t in year.tranches.values())
+
+    def test_a_sale_cannot_fall_outside_the_hold(self, rich_deal):
+        with pytest.raises(ValueError, match="hold"):
+            self._with_sale(rich_deal, year=rich_deal.hold_years + 1, proceeds=100.0)

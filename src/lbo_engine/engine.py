@@ -101,6 +101,10 @@ class YearRow:
     # financing fee. A target that would require *repaying* debt rather than
     # raising it leaves `raised` at zero — reported rather than silently
     # rounded away, so the UI can say the recap was not fundable.
+    # Divestiture proceeds applied to debt this year, and the sale costs paid.
+    divestiture_proceeds: float = 0.0
+    divestiture_fees: float = 0.0
+    divestiture_labels: list[str] = field(default_factory=list)
     recap_target: float = 0.0
     recap_raised: float = 0.0
     recap_fee: float = 0.0
@@ -229,6 +233,11 @@ def run_lbo(a: Assumptions) -> LBOResult:
             nol_opening,
         )
 
+        # Year-end divestitures, applied before any recap: proceeds pay down debt,
+        # which is what a sum-of-the-parts underwriting actually relies on.
+        for sale in a.divestitures_for(year_no):
+            _apply_divestiture(a, sale, row)
+
         # Year-end dividend recapitalisation, applied after the year is solved so
         # the new debt accrues no interest until the following year.
         recap = a.recap_for(year_no)
@@ -261,6 +270,33 @@ def run_lbo(a: Assumptions) -> LBOResult:
         exit_fees=exit_fees,
         exit_equity=exit_equity,
     )
+
+
+def _apply_divestiture(a: Assumptions, sale, row: YearRow) -> None:
+    """Apply sale proceeds to the debt stack, senior-first.
+
+    Senior-first because that is what a credit agreement requires: asset-sale
+    proceeds are a mandatory prepayment, and the mandatory-prepayment waterfall
+    runs top down. Anything left once every tranche is repaid stays as cash.
+    """
+    net = sale.proceeds - sale.fee_pct * sale.proceeds
+    row.divestiture_proceeds += net
+    row.divestiture_fees += sale.fee_pct * sale.proceeds
+    row.divestiture_labels.append(sale.label)
+
+    remaining = net
+    # The revolver is the most senior claim and is repaid ahead of the tranches.
+    repay = min(row.revolver_closing, remaining)
+    row.revolver_closing -= repay
+    remaining -= repay
+    for t in a.tranches:
+        if remaining <= 0:
+            break
+        pay = min(remaining, row.tranches[t.name].closing)
+        row.tranches[t.name].closing -= pay
+        remaining -= pay
+    # Surplus beyond the whole capital structure simply sits on the balance sheet.
+    row.closing_cash += remaining
 
 
 def _apply_recap(a: Assumptions, recap, row: YearRow, ebitda: float) -> float:

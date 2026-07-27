@@ -109,6 +109,33 @@ class DividendRecap(BaseModel):
         return self
 
 
+class Divestiture(BaseModel):
+    """A business sold during the hold, with the proceeds repaying debt.
+
+    The mirror image of a recap: cash in rather than out, debt down rather than
+    up. It matters because a large minority of buyouts are underwritten on a
+    sum-of-the-parts — buy the whole, sell the pieces that do not fit, use the
+    proceeds to delever — and a model without it will report that such a deal
+    cannot service itself, which is true only of the half of the plan it can see.
+
+    Deliberately proceeds-only. The *operating* effect of losing the divested
+    business must be reflected in the revenue and margin path, because only the
+    person building the case knows what was sold and what it earned. Modelling
+    it any other way would mean guessing at a segment split the engine has no
+    information about.
+
+    Convention: a YEAR-END event, like a recap. Proceeds repay debt senior-first,
+    and the reduced balance carries into the following year.
+    """
+
+    year: int = Field(ge=1, description="Projection year at whose end the sale completes")
+    proceeds: float = Field(gt=0, description="Cash consideration received")
+    fee_pct: float = Field(
+        default=0.01, ge=0, lt=0.1, description="Sale-process costs, deducted from proceeds",
+    )
+    label: str = Field(default="Divestiture", description="What was sold")
+
+
 class OperatingAssumptions(BaseModel):
     """The operating build. Scalars apply to every projection year."""
 
@@ -138,6 +165,10 @@ class Assumptions(BaseModel):
     recaps: list[DividendRecap] = Field(
         default_factory=list,
         description="Dividend recapitalisations, at most one per projection year",
+    )
+    divestitures: list[Divestiture] = Field(
+        default_factory=list,
+        description="Businesses sold during the hold; proceeds repay debt senior-first",
     )
     # Fees. Financing fees are capitalised at close and amortised straight-line
     # over the DEBT'S TENOR (ASC 835-30 convention), not the hold period.
@@ -190,8 +221,20 @@ class Assumptions(BaseModel):
                 raise ValueError(f"recap names unknown tranche {r.tranche!r}")
         return self
 
+    @model_validator(mode="after")
+    def _validate_divestitures(self) -> "Assumptions":
+        for d in self.divestitures:
+            if d.year > self.hold_years:
+                raise ValueError(
+                    f"divestiture in year {d.year} but the hold is {self.hold_years} years"
+                )
+        return self
+
     def recap_for(self, year: int) -> DividendRecap | None:
         return next((r for r in self.recaps if r.year == year), None)
+
+    def divestitures_for(self, year: int) -> list[Divestiture]:
+        return [d for d in self.divestitures if d.year == year]
 
     # Convenience accessors used by the engine
     def growth_schedule(self) -> list[float]:

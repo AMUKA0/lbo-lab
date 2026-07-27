@@ -41,7 +41,7 @@ The interactive API schema is at `/api/docs`.
 pytest
 ```
 
-123 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+128 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## The case-study library
 
@@ -87,6 +87,7 @@ The engine follows standard sponsor-model conventions throughout:
 | **Exit** | Exit EV = exit multiple × terminal EBITDA; exit equity = EV − net debt (floored at zero — limited liability). |
 | **Returns** | MOIC = exit equity / equity cheque. IRR by bisection on the sponsor's cash-flow vector. |
 | **Credit stats** | Net leverage, EBITDA/interest and (EBITDA−capex)/interest coverage, and FCF conversion by year — the covenant-style ratios a credit committee actually watches. |
+| **Divestitures** | A business sold mid-hold, proceeds repaying debt senior-first (the mandatory-prepayment waterfall a credit agreement actually requires). Proceeds-only by design: the operating effect of losing the business must be carried in the revenue and margin path, because only the case-builder knows what was sold and what it earned. |
 | **PIK toggle** | The issuer's *option* to accrue a coupon rather than pay it, at a step-up — distinct from `pik_rate`, which accrues unconditionally. Elected only when the year cannot otherwise be paid, searched junior-first, because nobody PIKs a coupon they can afford. In 2007 roughly a fifth of buyout firms used toggle debt and 13% of US junk-rated bond sales carried the feature. |
 | **Dividend recaps** | Incremental debt raised against the company, proceeds paid to the sponsor. Sized by a **target leverage** (the instruction a sponsor actually gives) or a fixed amount. Treated as a **year-end event**, so the new debt accrues no interest in the year it is raised — it existed for none of it — which also keeps the within-year interest solve to a single circularity. MOIC counts the dividends; the IRR vector receives them in the year they are paid. |
 | **Lifecycle** | The same run re-read as a sequence of *events* rather than a table of years: the cheque, each PIK election and what forced it, recaps, first revolver draw, coverage falling through 2.0×, the exit. Derived from a completed run — it is a reading of the model, not a second model. |
@@ -96,11 +97,13 @@ The engine follows standard sponsor-model conventions throughout:
 
 Conventions above were checked against: [Wall Street Prep on financing-fee accounting (ASC 835-30)](https://www.wallstreetprep.com/knowledge/debt-accounting-treatment-financing-fees/), [Macabacus on LBO transaction and financing fees](https://macabacus.com/lbo-model/fees-and-expenses), [Corporate Finance Institute's LBO model and credit-metrics overview](https://corporatefinanceinstitute.com/resources/financial-modeling/lbo-model/), [Street of Walls' LBO modelling test](https://www.streetofwalls.com/finance-training-courses/private-equity-training/lbo-modeling-test-example/), and Wall Street Oasis practitioner threads on [circular references in LBO models](https://www.wallstreetoasis.com/forum/private-equity/circular-references-in-lbo-models) and [fee treatment](https://www.wallstreetoasis.com/forum/private-equity/lbo-model-how-to-treat-transaction-fee-and-financing-fees). Rosenbaum & Pearl, *Investment Banking* (Ch. 5) remains the canonical text for the full build.
 
-## Why the case studies break, and what it measures
+## Why some case-study runs break, and what it measures
 
-Three of the eight case-study runs hit a liquidity break, which prompts a fair question: is the model too fragile? The diagnosis is worth stating, because the answer turned out to be yes, and fixable.
+Three of eight runs hit a liquidity break, which prompted a fair question: is the model too fragile? Two separate causes turned up, and both were mine rather than the engine's.
 
-The shortfalls are **3.0–4.8% of enterprise value** — near-misses on $26–44bn deals, not catastrophes. Testing five levers a distressed deal actually has showed one dominated:
+**The first was a reconstruction error.** RJR's "as signed" column originally broke in year two, which looked like the model rejecting a deal that demonstrably closed and ran for six years. It was rejecting the *structure* while knowing nothing about the *plan*: KKR underwrote RJR on a sum-of-the-parts, with Del Monte and the European Nabisco businesses earmarked for sale before close. Modelling the capital structure without the divestitures that serviced it describes a deal nobody signed. With them modelled, the column not only survives — it returns **0.85× against a reported ~1.0×**, and a negative IRR against a reported one of well under 1%. The winner's curse was visible at signing.
+
+**The second was missing optionality.** The shortfalls were 3.0–4.8% of enterprise value — near-misses, not catastrophes. Of five levers a distressed deal actually has, one dominated:
 
 | Lever | Hilton | RJR | TXU |
 |---|---|---|---|
@@ -110,11 +113,13 @@ The shortfalls are **3.0–4.8% of enterprise value** — near-misses on $26–4
 | Defer amortisation | breaks | survives | breaks |
 | **PIK toggle** | **survives** | **survives** | breaks |
 
-The engine was asking "can operations service this contract *as written*?" — but a real contract is renegotiable, and the structures of this vintage carried explicit options. A static model is therefore **systematically more fragile than reality**, and the PIK toggle is the single largest piece of that gap. It is now modelled.
+The engine was asking whether operations could service the contract *as written*. A real contract is renegotiable, and these structures carried explicit options — in 2007 roughly a fifth of buyout firms used toggle debt. A static model is therefore systematically more fragile than reality.
 
-TXU keeps its break under every lever, which is the correct answer for the only one of the four that actually filed for bankruptcy. Its junior tranche is named "Senior unsecured toggle notes" and had been modelled as pure cash-pay — the right name on the wrong instrument. Correcting it halves the shortfall from $2,128m to $977m without changing the verdict.
+**Where that leaves the library.** No "as signed" column breaks: all four deals model cleanly on pre-close information, which is the correct result, because all four were financeable enough to close. Three *realised* columns break, and each lands on the year the real deal hit its crisis — Hilton in 2010 (the year Blackstone renegotiated), RJR in 1993 (Marlboro Friday), TXU partway to its 2014 filing. The model finds those years without being told about them.
 
-The remaining bias is worth naming rather than fixing: the library is four *famous* deals, and deals are famous because they were extreme. Three are peak-vintage (1989, 2006, 2007). HCA — the one bought at a sane multiple — never breaks in either column.
+TXU keeps its break under every lever, which is right for the only one of the four that actually filed. Its junior tranche is named "Senior unsecured toggle notes" and had been modelled as pure cash-pay — the right name on the wrong instrument; correcting it halves the shortfall without changing the verdict.
+
+One bias is named rather than fixed: these are four *famous* deals, and deals are famous because they were extreme. Three are peak-vintage. HCA — the one bought at a sane multiple — never breaks in either column.
 
 ## Documented simplifications
 

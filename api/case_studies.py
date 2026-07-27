@@ -40,6 +40,7 @@ from typing import Literal
 from lbo_engine import (
     Assumptions,
     DebtTranche,
+    Divestiture,
     DividendRecap,
     OperatingAssumptions,
     RevolverAssumptions,
@@ -870,8 +871,12 @@ RJR = CaseStudy(
         entry_multiple=9.71,  # ~$30.1bn total transaction value
         operating=OperatingAssumptions(
             entry_revenue=_RJR_REVENUE,
-            revenue_growth=0.05,
-            ebitda_margin=[0.183, 0.190, 0.197, 0.203, 0.208],
+            # The plan as underwritten: the food businesses leave in the first
+            # two years, so revenue falls hard and margin rises because what
+            # remains is tobacco. Modelling +5% growth here — as an earlier
+            # version did — describes a company KKR never intended to own.
+            revenue_growth=[-0.14, -0.11, 0.04, 0.05, 0.05],
+            ebitda_margin=[0.190, 0.205, 0.215, 0.220, 0.225],
             da_pct_revenue=0.040,
             capex_pct_revenue=0.045,
             nwc_pct_revenue=0.12,
@@ -913,6 +918,14 @@ RJR = CaseStudy(
         nol_limit_pct=0.0,
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
+        # The divestitures were agreed at or shortly after close and were the
+        # whole reason the structure was thought to work. Without them the model
+        # reports a deal that cannot service itself — which is true of the
+        # structure alone and false of the plan.
+        divestitures=[
+            Divestiture(year=1, proceeds=2500.0, label="European Nabisco businesses"),
+            Divestiture(year=2, proceeds=2600.0, label="Del Monte"),
+        ],
         hold_years=5,
         exit_multiple=9.5,
     ),
@@ -921,10 +934,9 @@ RJR = CaseStudy(
         entry_multiple=9.71,
         operating=OperatingAssumptions(
             entry_revenue=_RJR_REVENUE,
-            # Divestitures shrink the top line, then the 1993 price war hits.
-            revenue_growth=[-0.06, -0.08, 0.02, 0.03, -0.04, 0.02],
-            # Marlboro Friday, April 1993 — year 5 of the hold.
-            ebitda_margin=[0.183, 0.188, 0.192, 0.190, 0.160, 0.165],
+            # The same divestitures, then Marlboro Friday in year 5.
+            revenue_growth=[-0.14, -0.11, 0.03, 0.03, -0.05, 0.02],
+            ebitda_margin=[0.190, 0.205, 0.212, 0.210, 0.172, 0.178],
             da_pct_revenue=0.040,
             capex_pct_revenue=0.045,
             nwc_pct_revenue=0.12,
@@ -945,6 +957,10 @@ RJR = CaseStudy(
         nol_limit_pct=0.0,
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
+        divestitures=[
+            Divestiture(year=1, proceeds=2500.0, label="European Nabisco businesses"),
+            Divestiture(year=2, proceeds=2600.0, label="Del Monte"),
+        ],
         hold_years=6,
         # Tobacco litigation and the price war compressed what anyone would pay.
         exit_multiple=8.0,
@@ -983,16 +999,15 @@ RJR = CaseStudy(
                "in the library."),
     ],
     model_caveats=[
-        "The most important caveat in the library. KKR repaid several billion dollars of "
-        "acquisition debt from divestitures agreed at or shortly after close — Del Monte "
-        "and the European Nabisco businesses — and the engine has no divestiture "
-        "mechanic. It therefore carries the full debt load against the full EBITDA for "
-        "the whole hold, when in reality both fell sharply in the first two years. This "
-        "is the direct cause of the liquidity break the model reports, and it is why "
-        "that break should be read as 'the deal was never self-financing from operations' "
-        "rather than as a prediction that RJR would fail in 1990. It very nearly did, "
-        "but the asset sales and the 1990 recapitalisation are what stood between the "
-        "two.",
+        "The divestiture proceeds are modelled, but their size and timing are "
+        "estimates. Roughly $5.1bn across the first two years is consistent with the Del "
+        "Monte and European Nabisco sales; exact figures and dates are not cleanly "
+        "public, and this column is sensitive to them — which is itself the point about "
+        "a deal underwritten on asset sales.",
+        "The engine applies sale proceeds to debt but cannot model the operating "
+        "business leaving, so the revenue and margin path carries that by hand. The "
+        "paths here represent a tobacco-weighted remainder; they are not fitted to a "
+        "reported segment split, because no usable one is public.",
         "The real structure had a substantial exchangeable-preferred layer sitting "
         "between debt and common. The engine has debt tranches and equity, nothing "
         "between, so the preferred is modelled as a PIK debt tranche. That is the right "
