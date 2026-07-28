@@ -11,6 +11,7 @@ the fee drag, using the conventional attribution:
   Multiple expansion  = (exit multiple − entry multiple) × exit EBITDA
   Deleveraging        = entry net debt − exit net debt
   Recapitalisation    = gross incremental debt raised in dividend recaps
+  Follow-on equity    = −(rescue capital injected after close)
   Fee drag            = −(transaction + financing + recap + exit fees)
 
 These terms sum EXACTLY to the sponsor's total value created — exit equity plus
@@ -63,10 +64,15 @@ class ReturnsBridge:
     multiple_expansion: float
     deleveraging: float
     recapitalisation: float
+    # Negative by construction. Rescue capital reduces net debt and so inflates
+    # the deleveraging line by exactly its own size; without this offset the
+    # identity would credit the business with value the sponsor supplied.
+    follow_on_equity: float
     fee_drag: float
     entry_equity: float
     exit_equity: float
     dividends: float
+    total_invested: float
 
     @property
     def total_value_created(self) -> float:
@@ -75,6 +81,7 @@ class ReturnsBridge:
             + self.multiple_expansion
             + self.deleveraging
             + self.recapitalisation
+            + self.follow_on_equity
             + self.fee_drag
         )
 
@@ -82,6 +89,11 @@ class ReturnsBridge:
     def total_proceeds(self) -> float:
         """What the sponsor actually gets back: exit equity plus recap dividends."""
         return self.exit_equity + self.dividends
+
+    @property
+    def value_created(self) -> float:
+        """Proceeds less every dollar put in, original cheque and rescue alike."""
+        return self.total_proceeds - self.total_invested
 
 
 def returns_bridge(r: LBOResult) -> ReturnsBridge:
@@ -93,10 +105,12 @@ def returns_bridge(r: LBOResult) -> ReturnsBridge:
         multiple_expansion=(a.exit_multiple - a.entry_multiple) * r.exit_ebitda,
         deleveraging=r.entry_net_debt - r.exit_net_debt,
         recapitalisation=sum(y.recap_raised for y in r.years),
+        follow_on_equity=-r.total_injected,
         fee_drag=-(su.transaction_fees + su.financing_fees + recap_fees + r.exit_fees),
         entry_equity=r.entry_equity,
         exit_equity=r.exit_equity,
         dividends=r.total_dividends,
+        total_invested=r.total_invested,
     )
 
 

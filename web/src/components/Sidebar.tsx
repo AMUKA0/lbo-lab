@@ -19,7 +19,14 @@
  *   has to work out by hand first.
  */
 
-import type { Assumptions, Benchmark, DebtTranche, DividendRecap, Preset } from "../api/types";
+import type {
+  Assumptions,
+  Benchmark,
+  DebtTranche,
+  DividendRecap,
+  EquityInjection,
+  Preset,
+} from "../api/types";
 import { fmtMoney, fmtMult, fmtPct } from "../lib/format";
 import { Group, NumberField, SliderField, ToggleField } from "./primitives";
 
@@ -346,6 +353,74 @@ export function Sidebar({
           }
         >
           + Add a recap
+        </button>
+      </Group>
+
+      {/* --------------------------------------------------- sponsor support */}
+      <Group
+        title={a.injections.length ? `Sponsor support — ${a.injections.length}` : "Sponsor support"}
+      >
+        <p className="field-note" style={{ marginTop: 0 }}>
+          Follow-on capital mid-hold. One control covers all three shapes a real rescue
+          takes: cash only is an equity cure; cash plus a larger face value is a
+          repurchase below par (the face is retired senior-first); face value with no
+          cash is a debt-for-equity conversion.
+          It funds the year it goes into and raises the invested-capital denominator, so
+          a rescued deal shows a worse multiple than one that never needed it.
+        </p>
+
+        {a.injections.map((inj, i) => (
+          <div className="tranche-card" key={i}>
+            <div className="tranche-head">
+              <strong>Year {inj.year}</strong>
+              <button
+                className="btn-ghost"
+                onClick={() => edit((n) => n.injections.splice(i, 1))}
+                aria-label={`Remove the year ${inj.year} injection`}
+              >
+                Remove
+              </button>
+            </div>
+            <SliderField
+              label="Year"
+              value={inj.year}
+              min={1}
+              max={a.hold_years}
+              step={1}
+              format={(v) => `Year ${v.toFixed(0)}`}
+              onChange={(v) => edit((n) => (n.injections[i].year = v))}
+            />
+            <NumberField
+              label="Cash injected"
+              value={inj.amount}
+              suffix="$m"
+              onChange={(v) => edit((n) => (n.injections[i].amount = Math.max(0, v)))}
+            />
+            <NumberField
+              label="Debt extinguished (face)"
+              value={inj.debt_retired}
+              suffix="$m"
+              onChange={(v) => edit((n) => (n.injections[i].debt_retired = Math.max(0, v)))}
+            />
+          </div>
+        ))}
+
+        <button
+          className="btn"
+          style={{ width: "100%", justifyContent: "center" }}
+          onClick={() =>
+            edit((n) => {
+              n.injections.push({
+                year: Math.min(2, n.hold_years),
+                amount: Math.round(n.entry_ebitda * 0.5),
+                debt_retired: 0,
+                label: "Follow-on equity",
+              } as EquityInjection);
+              n.injections.sort((x, y) => x.year - y.year);
+            })
+          }
+        >
+          + Add sponsor support
         </button>
       </Group>
 

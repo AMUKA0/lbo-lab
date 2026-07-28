@@ -16,7 +16,13 @@ three things that actually matter:
 
 import pytest
 
-from lbo_engine import Assumptions, Divestiture, DividendRecap, run_lbo
+from lbo_engine import (
+    Assumptions,
+    Divestiture,
+    DividendRecap,
+    EquityInjection,
+    run_lbo,
+)
 from lbo_engine.returns import returns_bridge, sponsor_irr
 
 
@@ -360,3 +366,70 @@ class TestLifecycle:
         ]
         events = lifecycle(run_lbo(Assumptions.model_validate(payload)))
         assert len([e for e in events if e.kind == "recap"]) == 2
+
+
+class TestEquityInjection:
+    """Follow-on sponsor capital. One mechanic covers the three shapes a real
+    rescue takes, and without it the model calls every liquidity crisis a death
+    — which is wrong for most of them, because good assets get rescued."""
+
+    def _stressed(self, deal: Assumptions) -> Assumptions:
+        payload = deal.model_dump()
+        payload["operating"]["ebitda_margin"] = [0.192, 0.11, 0.11, 0.13, 0.15]
+        payload["revolver"]["commitment"] = 30.0
+        return Assumptions.model_validate(payload)
+
+    def _with(self, deal: Assumptions, **kwargs) -> Assumptions:
+        payload = deal.model_dump()
+        payload["injections"] = [EquityInjection(**kwargs).model_dump()]
+        return Assumptions.model_validate(payload)
+
+    def test_a_cure_rescues_a_year_that_would_otherwise_break(self, rich_deal):
+        stressed = self._stressed(rich_deal)
+        with pytest.raises(ValueError):
+            run_lbo(stressed)
+        r = run_lbo(self._with(stressed, year=2, amount=120.0))
+        assert r.years[1].equity_injected == pytest.approx(120.0)
+
+    def test_rescue_capital_raises_the_denominator_and_costs_the_multiple(self, rich_deal):
+        """The point of the mechanic. A rescued deal must not look as good as one
+        that never needed rescuing."""
+        base = run_lbo(rich_deal)
+        rescued = run_lbo(self._with(rich_deal, year=2, amount=150.0))
+
+        assert rescued.total_invested == pytest.approx(base.entry_equity + 150.0)
+        assert rescued.moic < base.moic
+        assert sponsor_irr(rescued) < sponsor_irr(base)
+
+    def test_the_injection_is_an_outflow_in_its_year(self, rich_deal):
+        r = run_lbo(self._with(rich_deal, year=2, amount=150.0))
+        assert r.equity_cash_flows[2] == pytest.approx(-150.0)
+
+    def test_the_bridge_still_reconciles(self, rich_deal):
+        b = returns_bridge(run_lbo(self._with(rich_deal, year=2, amount=150.0)))
+        assert b.follow_on_equity == pytest.approx(-150.0)
+        assert b.total_value_created == pytest.approx(b.value_created, abs=1e-6)
+
+    def test_a_repurchase_below_par_retires_more_than_it_costs(self, rich_deal):
+        """Blackstone's 2010 shape: pay 800, extinguish 2000."""
+        base = run_lbo(rich_deal)
+        r = run_lbo(self._with(rich_deal, year=2, amount=80.0, debt_retired=200.0))
+
+        assert r.years[1].debt_retired == pytest.approx(200.0)
+        assert r.years[1].total_debt_closing < base.years[1].total_debt_closing
+        # Retiring debt for less than face transfers value from creditors to
+        # equity, so the multiple improves despite the cash going in.
+        assert r.moic > base.moic
+
+    def test_a_conversion_needs_no_cash(self, rich_deal):
+        r = run_lbo(self._with(rich_deal, year=2, amount=0.0, debt_retired=200.0))
+        assert r.total_invested == pytest.approx(r.entry_equity)
+        assert r.years[1].debt_retired == pytest.approx(200.0)
+
+    def test_an_injection_must_actually_do_something(self):
+        with pytest.raises(ValueError, match="inject cash, retire debt"):
+            EquityInjection(year=1, amount=0.0, debt_retired=0.0)
+
+    def test_an_injection_cannot_fall_outside_the_hold(self, rich_deal):
+        with pytest.raises(ValueError, match="hold"):
+            self._with(rich_deal, year=rich_deal.hold_years + 1, amount=100.0)

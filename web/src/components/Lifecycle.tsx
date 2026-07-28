@@ -24,6 +24,8 @@ const DOT: Record<LifecycleEvent["kind"], string> = {
   pik_toggle: "◐",
   recap: "◆",
   recap_unfunded: "◇",
+  injection: "⊕",
+  divestiture: "⊖",
   revolver: "▲",
   coverage: "▲",
   leverage: "▲",

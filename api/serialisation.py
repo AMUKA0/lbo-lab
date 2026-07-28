@@ -81,6 +81,9 @@ class YearOut(BaseModel):
     net_debt_closing: float
     # Tranches on which the PIK toggle was elected this year.
     pik_elections: list[str]
+    # Follow-on sponsor capital, and any debt extinguished alongside it.
+    equity_injected: float
+    debt_retired: float
     # Dividend recap, if one fell in this year. `raised` is gross incremental
     # debt; `dividend` is what reached the sponsor after the financing fee.
     recap_target: float
@@ -108,10 +111,12 @@ class BridgeOut(BaseModel):
     multiple_expansion: float
     deleveraging: float
     recapitalisation: float
+    follow_on_equity: float
     fee_drag: float
     entry_equity: float
     exit_equity: float
     dividends: float
+    total_invested: float
     total_proceeds: float
     total_value_created: float
     # The identity the test suite asserts, surfaced so the UI can prove it on
@@ -222,6 +227,8 @@ def year_out(y: YearRow) -> YearOut:
         total_debt_closing=y.total_debt_closing,
         net_debt_closing=y.total_debt_closing - y.closing_cash,
         pik_elections=list(y.pik_elections),
+        equity_injected=y.equity_injected,
+        debt_retired=y.debt_retired,
         recap_target=y.recap_target,
         recap_raised=y.recap_raised,
         recap_fee=y.recap_fee,
@@ -244,16 +251,18 @@ def year_out(y: YearRow) -> YearOut:
 
 
 def bridge_out(b: ReturnsBridge) -> BridgeOut:
-    gain = b.total_proceeds - b.entry_equity
+    gain = b.total_proceeds - b.total_invested
     return BridgeOut(
         ebitda_growth=b.ebitda_growth,
         multiple_expansion=b.multiple_expansion,
         deleveraging=b.deleveraging,
         recapitalisation=b.recapitalisation,
+        follow_on_equity=b.follow_on_equity,
         fee_drag=b.fee_drag,
         entry_equity=b.entry_equity,
         exit_equity=b.exit_equity,
         dividends=b.dividends,
+        total_invested=b.total_invested,
         total_proceeds=b.total_proceeds,
         total_value_created=b.total_value_created,
         equity_gain=gain,

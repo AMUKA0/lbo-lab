@@ -379,6 +379,27 @@ def lifecycle(result) -> list[LifecycleEvent]:
                 tone="watch",
             ))
 
+        if y.equity_injected > 0 or y.debt_retired > 0:
+            what = ", ".join(y.injection_labels)
+            bits = []
+            if y.equity_injected > 0:
+                bits.append(f"{_m(y.equity_injected)} of fresh sponsor capital")
+            if y.debt_retired > 0:
+                bits.append(f"{_m(y.debt_retired)} of debt extinguished")
+            events.append(LifecycleEvent(
+                year=y.year, kind="injection",
+                title=f"Sponsor support — {what}",
+                detail=(
+                    " and ".join(bits).capitalize()
+                    + ". Rescue capital is not free: it funds the year it goes into, "
+                    "raises the invested-capital denominator, and lands in the IRR "
+                    "vector as an outflow. A deal that needed rescuing should show a "
+                    "worse multiple than one that did not, and this is where that "
+                    "shows up."
+                ),
+                tone="watch",
+            ))
+
         if y.divestiture_proceeds > 0:
             what = ", ".join(y.divestiture_labels)
             events.append(LifecycleEvent(

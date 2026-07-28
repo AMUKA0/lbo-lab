@@ -102,6 +102,10 @@ class YearRow:
     # raising it leaves `raised` at zero — reported rather than silently
     # rounded away, so the UI can say the recap was not fundable.
     # Divestiture proceeds applied to debt this year, and the sale costs paid.
+    # Follow-on sponsor capital injected at the START of this year.
+    equity_injected: float = 0.0
+    debt_retired: float = 0.0
+    injection_labels: list[str] = field(default_factory=list)
     divestiture_proceeds: float = 0.0
     divestiture_fees: float = 0.0
     divestiture_tax: float = 0.0
@@ -138,6 +142,18 @@ class LBOResult:
         return self.sources_uses.total_debt - self.sources_uses.cash_to_balance_sheet
 
     @property
+    def total_injected(self) -> float:
+        """Follow-on capital the sponsor had to put in after close."""
+        return sum(y.equity_injected for y in self.years)
+
+    @property
+    def total_invested(self) -> float:
+        """Every dollar the sponsor put in: the cheque at close plus any rescue
+        capital. This is the denominator a multiple should be struck on — a deal
+        that needed rescuing did not return its money on the original cheque."""
+        return self.entry_equity + self.total_injected
+
+    @property
     def dividends(self) -> list[float]:
         """Recap proceeds reaching the sponsor, by year."""
         return [y.recap_dividend for y in self.years]
@@ -154,7 +170,7 @@ class LBOResult:
         sponsor genuinely has back; excluding it would understate the multiple
         on every deal that used one.
         """
-        return (self.total_dividends + self.exit_equity) / self.entry_equity
+        return (self.total_dividends + self.exit_equity) / self.total_invested
 
     @property
     def equity_cash_flows(self) -> list[float]:
@@ -166,7 +182,7 @@ class LBOResult:
         """
         flows = [-self.entry_equity] + [0.0] * self.assumptions.hold_years
         for y in self.years:
-            flows[y.year] += y.recap_dividend
+            flows[y.year] += y.recap_dividend - y.equity_injected
         flows[-1] += self.exit_equity
         return flows
 
@@ -228,11 +244,38 @@ def run_lbo(a: Assumptions) -> LBOResult:
         capex = a.operating.capex_pct_revenue * revenue
         delta_nwc = a.operating.nwc_pct_revenue * (revenue - prev_revenue)
 
+        # Follow-on equity funds the year it goes into, so it lands in opening
+        # cash before the waterfall rather than at year end like the other two
+        # capital events. Rescue capital that arrived after the crisis would not
+        # be rescuing anything.
+        injections = a.injections_for(year_no)
+        injected = sum(i.amount for i in injections)
+        retired = sum(i.debt_retired for i in injections)
+        opening_cash += injected
+        # Debt extinguished at the start of the year, senior-first, so the year
+        # is solved against the post-restructuring balance sheet. Retiring it at
+        # year end would leave the company paying a full year of interest on
+        # paper it no longer owes.
+        if retired > 0:
+            remaining = retired
+            repay = min(revolver_opening, remaining)
+            revolver_opening -= repay
+            remaining -= repay
+            for t in a.tranches:
+                if remaining <= 0:
+                    break
+                pay = min(remaining, tranche_opening[t.name])
+                tranche_opening[t.name] -= pay
+                remaining -= pay
+
         row = _solve_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening,
         )
+        row.equity_injected = injected
+        row.debt_retired = retired
+        row.injection_labels = [i.label for i in injections]
 
         # Year-end divestitures, applied before any recap: proceeds pay down debt,
         # which is what a sum-of-the-parts underwriting actually relies on.

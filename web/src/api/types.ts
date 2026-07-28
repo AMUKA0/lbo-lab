@@ -49,6 +49,15 @@ export interface DividendRecap {
   financing_fee_pct: number;
 }
 
+/** Follow-on sponsor capital. One shape covers a straight equity cure, a debt
+ *  repurchase below par, and a debt-for-equity conversion. */
+export interface EquityInjection {
+  year: number;
+  amount: number;
+  debt_retired: number;
+  label: string;
+}
+
 export interface Assumptions {
   entry_ebitda: number;
   entry_multiple: number;
@@ -56,6 +65,7 @@ export interface Assumptions {
   tranches: DebtTranche[];
   revolver: RevolverAssumptions;
   recaps: DividendRecap[];
+  injections: EquityInjection[];
   transaction_fee_pct_ev: number;
   financing_fee_pct_debt: number;
   financing_fee_tenor_years: number;
@@ -88,6 +98,8 @@ export interface LifecycleEvent {
     | "pik_toggle"
     | "recap"
     | "recap_unfunded"
+    | "injection"
+    | "divestiture"
     | "revolver"
     | "coverage"
     | "leverage"
@@ -130,6 +142,8 @@ export interface YearRow {
    *  above current leverage leaves `raised` at zero — the recap was not
    *  fundable, which is reported rather than hidden. */
   pik_elections: string[];
+  equity_injected: number;
+  debt_retired: number;
   recap_target: number;
   recap_raised: number;
   recap_fee: number;
@@ -157,10 +171,15 @@ export interface Bridge {
   /** GROSS incremental debt raised in recaps — not the net dividend. The net
    *  would leave the identity short by exactly the financing fee. */
   recapitalisation: number;
+  /** Negative by construction: capital the sponsor had to put in, offsetting the
+   *  deleveraging it bought. */
+  follow_on_equity: number;
   fee_drag: number;
   entry_equity: number;
   exit_equity: number;
   dividends: number;
+  /** Entry cheque plus any rescue capital — the denominator MOIC is struck on. */
+  total_invested: number;
   /** Exit equity plus recap dividends: what the sponsor actually got back. */
   total_proceeds: number;
   total_value_created: number;

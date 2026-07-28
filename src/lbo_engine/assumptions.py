@@ -161,6 +161,50 @@ class Divestiture(BaseModel):
     label: str = Field(default="Divestiture", description="What was sold")
 
 
+class EquityInjection(BaseModel):
+    """Follow-on sponsor capital put into the company mid-hold.
+
+    The mirror of a recap in the other direction, and the mechanic without which
+    a model calls every liquidity crisis a death. Real sponsors rescue good
+    assets: Blackstone put fresh equity into Hilton alongside the 2010 debt
+    restructuring, and KKR injected about $1.7bn into RJR in 1990 when the reset
+    provisions on the PIK paper threatened a default. Both companies survived;
+    a model with no injection mechanic reports both as failures.
+
+    It is not free. The cash goes in at the START of the year — unlike a recap
+    or a divestiture, which are year-end events — because rescue capital has to
+    be available during the year it is rescuing. It then lands in the IRR vector
+    as an outflow in that year and raises the invested-capital denominator, so
+    a deal that needed rescuing shows a worse multiple than one that did not.
+    That is the point: dilution is the cost of survival.
+    """
+
+    year: int = Field(ge=1, description="Projection year at whose start the capital goes in")
+    amount: float = Field(ge=0, description="Cash injected by the sponsor")
+    # Face value of debt extinguished alongside the injection. One field covers
+    # all three shapes a real rescue takes, which is why there is no separate
+    # restructuring mechanic:
+    #   amount only                  -> a straight equity cure
+    #   amount + larger debt_retired -> a repurchase below par, which is what
+    #                                   Blackstone did in 2010, buying ~$2bn of
+    #                                   Hilton's debt for ~$800m
+    #   debt_retired with no amount  -> a debt-for-equity conversion
+    # The difference between face retired and cash paid is a transfer from
+    # creditors to equity: net debt falls by the face, so it lands in the
+    # deleveraging line, and the identity closes without a separate term.
+    debt_retired: float = Field(
+        default=0.0, ge=0,
+        description="Face value of debt extinguished, by repurchase below par or conversion",
+    )
+    label: str = Field(default="Follow-on equity", description="What the injection was for")
+
+    @model_validator(mode="after")
+    def _does_something(self) -> "EquityInjection":
+        if self.amount <= 0 and self.debt_retired <= 0:
+            raise ValueError("an injection must inject cash, retire debt, or both")
+        return self
+
+
 class OperatingAssumptions(BaseModel):
     """The operating build. Scalars apply to every projection year."""
 
@@ -194,6 +238,10 @@ class Assumptions(BaseModel):
     divestitures: list[Divestiture] = Field(
         default_factory=list,
         description="Businesses sold during the hold; proceeds repay debt senior-first",
+    )
+    injections: list[EquityInjection] = Field(
+        default_factory=list,
+        description="Follow-on sponsor capital; funds the year it is injected into",
     )
     # Fees. Financing fees are capitalised at close and amortised straight-line
     # over the DEBT'S TENOR (ASC 835-30 convention), not the hold period.
@@ -267,6 +315,12 @@ class Assumptions(BaseModel):
                 raise ValueError(
                     f"divestiture in year {d.year} but the hold is {self.hold_years} years"
                 )
+        for i in self.injections:
+            if i.year > self.hold_years:
+                raise ValueError(
+                    f"equity injection in year {i.year} but the hold is "
+                    f"{self.hold_years} years"
+                )
         return self
 
     def recap_for(self, year: int) -> DividendRecap | None:
@@ -274,6 +328,9 @@ class Assumptions(BaseModel):
 
     def divestitures_for(self, year: int) -> list[Divestiture]:
         return [d for d in self.divestitures if d.year == year]
+
+    def injections_for(self, year: int) -> list[EquityInjection]:
+        return [i for i in self.injections if i.year == year]
 
     # Convenience accessors used by the engine
     def growth_schedule(self) -> list[float]:

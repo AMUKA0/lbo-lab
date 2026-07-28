@@ -41,6 +41,7 @@ from lbo_engine import (
     Assumptions,
     DebtTranche,
     Divestiture,
+    EquityInjection,
     DividendRecap,
     OperatingAssumptions,
     RevolverAssumptions,
@@ -323,6 +324,22 @@ HILTON = CaseStudy(
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
+        # April 2010, modelled as reported: roughly $2bn of Hilton's own debt
+        # bought back for about $800m — a repurchase far below par, because the
+        # credit market had written it down — and a further ~$2bn converted to
+        # preferred. Net, about $4bn of debt gone for $800m of cash. Without
+        # this the structure runs out of liquidity in year three, which is
+        # exactly when Blackstone did it.
+        injections=[
+            EquityInjection(
+                year=3, amount=800.0, debt_retired=2000.0,
+                label="2010 debt repurchase below par",
+            ),
+            EquityInjection(
+                year=3, amount=0.0, debt_retired=2000.0,
+                label="2010 debt-for-preferred conversion",
+            ),
+        ],
         hold_years=11,
         exit_multiple=13.5,
     ),
@@ -375,11 +392,14 @@ HILTON = CaseStudy(
                "asset-light shift.", "hilton-bsic"),
     ],
     model_caveats=[
-        "Blackstone bought back roughly $2bn of Hilton's own debt for about $800m in "
-        "2010 and converted a further ~$2bn to preferred. That deleveraging at a "
-        "discount is a material part of the return and the engine has no mechanic for "
-        "it — the realised column therefore carries more debt through the back half of "
-        "the hold than Hilton actually did, and understates the outcome.",
+        "The 2010 restructuring is modelled, but as a single year-three event at the "
+        "reported quantum. The real sequence ran over months and included exchanges "
+        "this model collapses into one line. The cash figure is also the softest input "
+        "in the case: ~$800m is the widely reported cost of the debt repurchase, not a "
+        "disclosed equity contribution.",
+        "Debt extinguished below par is cancellation-of-indebtedness income in US tax, "
+        "and the engine does not tax it. On ~$1.2bn of discount that is a real cash "
+        "cost the model does not charge.",
         "The exit was a staged sell-down — a December 2013 IPO followed by four years "
         "of secondary sales through 2018 — not a single liquidity event. The model "
         "exits in one block at the end of the hold, which flatters IRR relative to a "
@@ -414,42 +434,6 @@ HILTON = CaseStudy(
             "this app exists to show."
         ),
     ),
-    break_notes=[
-        BreakNote(
-            column="realised",
-            year=3,
-            calendar="2010",
-            headline="The year Blackstone had to renegotiate",
-            what_happened=(
-                "US RevPAR fell roughly 17% in 2009 and was still depressed through "
-                "2010. Hilton's cash interest bill on $20.5bn of property debt no "
-                "longer fit inside its EBITDA. In April 2010 Blackstone restructured: "
-                "it bought back around $2bn of Hilton's own debt for roughly $800m — "
-                "buying its own liabilities at a discount because the credit market "
-                "had written them down — converted a further ~$2bn into preferred, "
-                "and put in fresh equity. Total debt came down from about $20bn to "
-                "about $16bn. The company never defaulted, but only because the "
-                "capital structure was renegotiated."
-            ),
-            what_the_engine_saw=(
-                "EBITDA falling from $1,749m at entry to roughly $1,354m by year two "
-                "while cash interest stayed near $1,646m — coverage through 1.0×, "
-                "meaning operations no longer earned the interest bill. The $1bn "
-                "revolver absorbed the year-one and year-two shortfalls and was "
-                "exhausted by year three, leaving a $780m gap with nothing to fund it."
-            ),
-            what_the_engine_cannot_see=(
-                "All three of the things that actually resolved it. Repurchasing debt "
-                "below par is a gain the engine has no concept of; converting debt to "
-                "preferred needs a layer between debt and equity that the engine does "
-                "not model; and follow-on sponsor equity is not an input. Every one is "
-                "a renegotiation, and this engine models a fixed contract. The break "
-                "is therefore not a prediction that Hilton failed — it is the model "
-                "locating, from the numbers alone, the exact year the contract as "
-                "signed stopped being viable."
-            ),
-        )
-    ],
     source_keys=["hilton-8k", "hilton-prem14a", "hilton-oxford", "hilton-bsic"],
     column_notes={
         "underwriting": (
@@ -459,16 +443,20 @@ HILTON = CaseStudy(
             "arriving on schedule, with essentially no margin for it not to."
         ),
         "realised": (
-            "The structure as signed fails in year three, and this is the most useful "
-            "output in the library — because it is right. Fed the RevPAR collapse that "
-            "actually happened, cash interest exceeds EBITDA from 2009 and the $1bn "
-            "revolver is exhausted by 2010. That is precisely when Blackstone "
-            "renegotiated: buying back roughly $2bn of Hilton's own debt for about "
-            "$800m and converting a further ~$2bn to preferred. The model is not "
-            "failing to describe the deal — it is identifying, from the numbers alone, "
-            "the moment the deal had to be restructured to survive. What follows "
-            "afterwards is a different capital structure, and this engine has no "
-            "mechanic for the change."
+            "This is the column the whole library is built to produce. Fed the RevPAR "
+            "collapse that actually happened, cash interest exceeds EBITDA from 2009 and "
+            "the $1bn revolver is exhausted by 2010 — and with the structure left "
+            "untouched the engine refuses to go further, in exactly the year Blackstone "
+            "renegotiated. Model that renegotiation as it was reported — about $2bn of "
+            "Hilton's own debt bought back for roughly $800m because the credit market "
+            "had written it down, plus a further ~$2bn converted to preferred — and the "
+            "deal runs the full eleven years and returns about 3.0×, against a reported "
+            "~3.0×. "
+            "Both halves of that matter. The break located the crisis from the numbers "
+            "alone; the recovery shows the model reproduces the outcome once it is told "
+            "what the sponsor actually did. Neither is worth much without the other, and "
+            "the $800m is a real cost carried in the invested-capital denominator rather "
+            "than waved away."
         ),
     },
 )
@@ -1062,6 +1050,12 @@ RJR = CaseStudy(
         # whole reason the structure was thought to work. Without them the model
         # reports a deal that cannot service itself — which is true of the
         # structure alone and false of the plan.
+        injections=[
+            # KKR injected about $1.7bn of fresh equity in 1990 when the reset
+            # provisions on the PIK paper threatened a default. It buys year two;
+            # it does nothing for Marlboro Friday three years later.
+            EquityInjection(year=2, amount=1700.0, label="1990 recapitalisation"),
+        ],
         divestitures=[
             # Gains estimated at ~20% of consideration, not the half a
             # "long-held conglomerate asset" instinct suggests. R.J. Reynolds

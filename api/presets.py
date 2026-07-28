@@ -12,6 +12,7 @@ from lbo_engine import (
     Assumptions,
     DebtTranche,
     DividendRecap,
+    EquityInjection,
     OperatingAssumptions,
     RevolverAssumptions,
 )
@@ -102,6 +103,23 @@ def _recap(d: Assumptions) -> None:
     ]
 
 
+def _rescue(d: Assumptions) -> None:
+    # A downturn, and the sponsor stepping in the way one actually does: some
+    # cash, and debt bought back below par because the market has written it
+    # down. This structure has enough revolver to survive either way, which is
+    # the honest version of the lesson — the support is not preventing a
+    # default here, it is transferring value from creditors to equity, and IRR
+    # roughly halves without it.
+    d.operating.revenue_growth = [0.04, -0.12, -0.04, 0.06, 0.06]
+    d.operating.ebitda_margin = [0.198, 0.150, 0.150, 0.180, 0.195]
+    d.injections = [
+        EquityInjection(
+            year=3, amount=40.0, debt_retired=110.0,
+            label="Rescue: repurchase below par",
+        )
+    ]
+
+
 PRESETS = [
     {
         "name": "Base case",
@@ -122,6 +140,11 @@ PRESETS = [
         "Dividend recap",
         "The base case with one change: re-lever to 4.5× in year three and pay the proceeds out. Watch IRR rise while MOIC does not.",
         _recap,
+    ),
+    _preset(
+        "Rescued deal",
+        "A downturn, and the sponsor stepping in the way one actually does — $40m of cash plus $110m of debt bought back below par. Remove the support and IRR roughly halves: buying your own liabilities at a discount is value transferred from creditors to equity.",
+        _rescue,
     ),
     _preset(
         "2007 vintage",

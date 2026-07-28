@@ -132,17 +132,34 @@ def test_the_library_spans_the_range_of_outcomes():
     assert len(verdicts) >= 3
 
 
-def test_hilton_realised_path_identifies_the_restructuring():
-    """The single most load-bearing result in the library, pinned so it can't
-    silently change: fed the actual downturn, Hilton's structure as signed runs
-    out of liquidity — which is what forced the 2010 debt renegotiation."""
+def test_hilton_needs_its_restructuring_and_reproduces_the_outcome_with_it():
+    """The library's most load-bearing result, pinned in both halves.
+
+    Strip the 2010 restructuring out and the structure runs out of liquidity in
+    year three — the model locating the crisis from the numbers alone, in the
+    exact year Blackstone renegotiated. Put it back, as reported, and the deal
+    runs the full eleven years and lands on the reported multiple. Either half
+    alone is a much weaker claim than the pair.
+    """
+    from lbo_engine import Assumptions, run_lbo
+
+    case = BY_SLUG["hilton-blackstone-2007"]
+    assert case.realised.injections, "the restructuring is what this test is about"
+
+    without = case.realised.model_dump()
+    without["injections"] = []
+    with pytest.raises(ValueError, match="revolver"):
+        run_lbo(Assumptions.model_validate(without))
+
     body = client.get("/api/cases/hilton-blackstone-2007").json()
     realised = body["realised"]
-    assert realised["failed"]
-    assert "revolver" in realised["message"].lower()
-    # And the deal is still underwritable on the numbers as signed — the whole
-    # point being that the failure comes from what happened, not from the price.
+    assert not realised["failed"]
+    # Reported ~3.0x. Anything inside a fifth of a turn is reproducing it.
+    assert abs(realised["moic"] - body["outcome"]["realised_moic"]) < 0.2
+    # And the deal is underwritable as signed — the failure came from what
+    # happened, not from the price.
     assert body["underwriting"]["failed"] is False
+
 
 
 def test_txu_underwrites_respectably_and_still_lost_everything():
