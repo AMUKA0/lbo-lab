@@ -182,6 +182,9 @@ export interface CreditYear {
   year: number;
   net_leverage: number | null;
   interest_coverage: number | null;
+  /** Cash interest plus PIK accrual — what the lenders are owed for the year,
+   *  paid or not. Diverges from the cash figure wherever a PIK strip compounds. */
+  total_interest_coverage: number | null;
   ebitda_less_capex_coverage: number | null;
   fcf_conversion: number | null;
 }

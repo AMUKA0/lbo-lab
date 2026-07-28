@@ -335,13 +335,25 @@ HILTON = CaseStudy(
                "figure, so the entry multiple is struck on money the company had "
                "actually earned.", "hilton-oxford"),
         Figure("Entry multiple", "14.9×", "derived",
-               "$26.0bn ÷ $1,749m. The proxy's own bankers put it at 15.5× CY2007E on "
-               "management projections and 14.5× on street estimates — the LTM figure "
-               "sits between them, which is the reassurance that the base is right.",
+               "$26.0bn ÷ $1,749m of 2006 actual EBITDA. The proxy's bankers quote "
+               "15.5× and 14.5× on CY2007 *estimates*; those are not directly "
+               "comparable to a trailing multiple and an earlier version of this note "
+               "wrongly treated 14.9× 'sitting between them' as corroboration. It "
+               "cannot — a forward multiple struck on higher EBITDA is arithmetically "
+               "lower than the trailing one, so if anything the trailing figure should "
+               "exceed both. The LTM basis is used deliberately: it strikes the price "
+               "against money the company had actually earned rather than money it was "
+               "projected to earn.",
                "hilton-prem14a"),
         Figure("Debt / equity", "$20.5bn / $5.6bn", "reported",
-               "78.5% debt. Split here as ~$7.6bn senior mortgage, ~$1.0bn second lien "
-               "and ~$11.9bn mezzanine I–III.", "hilton-bsic"),
+               "78.5% debt, split as ~$7.6bn senior mortgage, ~$1.0bn second lien and "
+               "~$11.9bn mezzanine I–III. The headline split is well reported; the "
+               "tranche detail rests on secondary sources rather than the financing "
+               "documents, so treat the mortgage/mezzanine boundary as the softest "
+               "figure in this case. It matters: the mezzanine carries 175bps more "
+               "than the mortgage, so a wrong boundary moves cash interest by tens of "
+               "millions a year on a structure already running at 1.1× coverage.",
+               "hilton-bsic"),
         Figure("Amortisation", "None", "reported",
                "Property-level mortgage and mezzanine paper, interest-only. This is not "
                "a modelling simplification — the absence of amortisation is the reason "
@@ -987,12 +999,24 @@ RJR = CaseStudy(
         entry_multiple=9.71,  # ~$30.1bn total transaction value
         operating=OperatingAssumptions(
             entry_revenue=_RJR_REVENUE,
-            # The plan as underwritten: the food businesses leave in the first
-            # two years, so revenue falls hard and margin rises because what
-            # remains is tobacco. Modelling +5% growth here — as an earlier
-            # version did — describes a company KKR never intended to own.
-            revenue_growth=[-0.14, -0.11, 0.04, 0.05, 0.05],
-            ebitda_margin=[0.190, 0.205, 0.215, 0.220, 0.225],
+            # The plan as underwritten: the food businesses leave in the first two
+            # years, so revenue falls hard and margin rises sharply because what
+            # remains is tobacco-weighted. Two things this path has to get right,
+            # and an earlier version got both wrong:
+            #   - the divested businesses take their EBITDA with them. About
+            #     $550m leaves across the two years, consistent with $5.1bn of
+            #     consideration at a high-single-digit multiple. A path where
+            #     revenue falls 24% and EBITDA falls 14% is selling businesses
+            #     that apparently earned nothing.
+            #   - the remainder is mostly cigarettes, and domestic tobacco ran
+            #     margins north of 30%. Capping the blended margin at 22.5%
+            #     described a mix that no longer existed.
+            # EBITDA recovering past the entry level by year five is deliberate
+            # and defensible: RJR was pushing double-digit annual price rises on
+            # a stub with real pricing power, which is precisely the spiral that
+            # made Marlboro Friday inevitable.
+            revenue_growth=[-0.14, -0.19, 0.04, 0.05, 0.05],
+            ebitda_margin=[0.194, 0.216, 0.230, 0.240, 0.248],
             da_pct_revenue=0.040,
             capex_pct_revenue=0.045,
             nwc_pct_revenue=0.12,
@@ -1064,9 +1088,11 @@ RJR = CaseStudy(
         entry_multiple=9.71,
         operating=OperatingAssumptions(
             entry_revenue=_RJR_REVENUE,
-            # The same divestitures, then Marlboro Friday in year 5.
-            revenue_growth=[-0.14, -0.11, 0.03, 0.03, -0.05, 0.02],
-            ebitda_margin=[0.190, 0.205, 0.212, 0.210, 0.172, 0.178],
+            # The same divestitures and the same tobacco-weighted remainder, then
+            # Marlboro Friday in year five takes roughly seven points of margin
+            # straight out of the mix.
+            revenue_growth=[-0.14, -0.19, 0.03, 0.03, -0.05, 0.02],
+            ebitda_margin=[0.194, 0.216, 0.228, 0.236, 0.172, 0.180],
             da_pct_revenue=0.040,
             capex_pct_revenue=0.045,
             nwc_pct_revenue=0.12,
@@ -1227,7 +1253,7 @@ RJR = CaseStudy(
     column_notes={
         "underwriting": (
             "The model very nearly reproduces the outcome from pre-close "
-            "information alone: about 0.7× against a reported ~1.0×, and a negative "
+            "information alone: about 0.8× against a reported ~1.0×, and a negative "
             "IRR against a reported one of well under 1%. The winner's curse was "
             "visible at signing. "
             "Note what carries it. Cash interest plus PIK accrual runs close to the "

@@ -143,6 +143,9 @@ class CreditYearOut(BaseModel):
     year: int
     net_leverage: float | None
     interest_coverage: float | None
+    # Cash interest plus PIK. Diverges sharply from the cash figure wherever a
+    # PIK strip is compounding, which is exactly where it matters.
+    total_interest_coverage: float | None
     ebitda_less_capex_coverage: float | None
     fcf_conversion: float | None
 

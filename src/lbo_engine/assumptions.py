@@ -126,6 +126,22 @@ class Divestiture(BaseModel):
 
     Convention: a YEAR-END event, like a recap. Proceeds repay debt senior-first,
     and the reduced balance carries into the following year.
+
+    Two consequences of that convention are worth stating, because both are
+    conservative and neither is obvious:
+
+    * The proceeds arrive *after* the year's liquidity test, so a business sold
+      in January provides no relief at all to the year it was sold in. For a
+      deal underwritten on a sum-of-the-parts this understates first-year
+      headroom, and it is why such a deal can still break in year one here.
+    * Interest that year is charged on the average of opening and the
+      *pre*-disposal closing balance, so the schedule slightly overstates
+      interest in a disposal year relative to the average-balance convention
+      used everywhere else.
+
+    Both are deliberate: modelling intra-year disposal timing would need a
+    completion date the engine does not ask for, and guessing at one would
+    trade a visible conservatism for an invisible assumption.
     """
 
     year: int = Field(ge=1, description="Projection year at whose end the sale completes")

@@ -312,6 +312,25 @@ export function CreditTable({ credit }: { credit: CreditYear[] }) {
               </td>
             ))}
           </tr>
+          {/* Both measures, because on a PIK-heavy structure the cash figure
+              alone flatters the deal badly — it stays comfortable long after the
+              balance has started compounding away from the business. */}
+          <tr>
+            <td className="row-label">EBITDA / total interest (incl. PIK)</td>
+            {credit.map((c) => (
+              <td
+                key={c.year}
+                className={c.total_interest_coverage == null ? "na" : undefined}
+                style={
+                  c.total_interest_coverage != null && c.total_interest_coverage < 2
+                    ? { color: "var(--rust)" }
+                    : undefined
+                }
+              >
+                {fmtMult(c.total_interest_coverage, 2)}
+              </td>
+            ))}
+          </tr>
           <tr>
             <td className="row-label">(EBITDA − capex) / interest</td>
             {credit.map((c) => (

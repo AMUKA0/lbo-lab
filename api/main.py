@@ -55,8 +55,11 @@ app = FastAPI(
 )
 
 # The SPA is served from a different origin in development (Vite on :5173).
-# In production the static build is served by this same app, so this is a
-# development affordance rather than a permanent hole.
+# In production the static build is served by this same app, so same-origin
+# requests never reach this middleware and the list below stays a development
+# affordance rather than a permanent hole. If the client is ever hosted
+# separately from the API, its origin has to be added here explicitly — the
+# list is deliberately not a wildcard.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -190,10 +190,19 @@ def scenario_set(base: Assumptions) -> dict[str, Assumptions]:
 # ----------------------------------------------------------------- credit view
 
 def credit_stats(a: Assumptions) -> pd.DataFrame:
-    """The lender's dashboard, by year: net leverage, interest coverage,
-    (EBITDA − capex) coverage, and FCF conversion. These are the covenant-style
-    ratios a credit committee watches; a sponsor who can't speak to them
-    doesn't get financed."""
+    """The lender's dashboard, by year: net leverage, cash and total interest
+    coverage, (EBITDA − capex) coverage, and FCF conversion. These are the
+    covenant-style ratios a credit committee watches; a sponsor who can't speak
+    to them doesn't get financed.
+
+    Both coverage measures are reported because they answer different questions.
+    Cash coverage is the liquidity test — can the year be paid. Total coverage
+    adds PIK accrual, and on a structure with a large PIK strip the two diverge
+    enormously: RJR's preferred accrues $1.3–2.2bn a year against $3.1bn of
+    EBITDA, so cash coverage alone makes that deal look serviceable long after
+    the balance has started compounding away from it. Showing only the flattering
+    one would be the kind of omission this model exists to avoid.
+    """
     r = run_lbo(a)
     records = []
     for row in r.years:
@@ -203,6 +212,13 @@ def credit_stats(a: Assumptions) -> pd.DataFrame:
             "net_leverage": net_debt / row.ebitda if row.ebitda > 0 else float("nan"),
             "interest_coverage": (
                 row.ebitda / row.cash_interest_total if row.cash_interest_total > 0 else float("inf")
+            ),
+            # Cash interest plus PIK accrual: what the lenders are actually owed
+            # for the year, whether or not it was paid in cash.
+            "total_interest_coverage": (
+                row.ebitda / (row.cash_interest_total + row.pik_accrual_total)
+                if (row.cash_interest_total + row.pik_accrual_total) > 0
+                else float("inf")
             ),
             "ebitda_less_capex_coverage": (
                 (row.ebitda - row.capex) / row.cash_interest_total
