@@ -25,20 +25,18 @@ export function App() {
           <BrandMark />
           LBO Lab
         </NavLink>
+        {/* No API link here. The OpenAPI schema is worth reaching — it is
+            generated from the same Pydantic contract the model validates
+            against, which is the strongest evidence the layers cannot drift —
+            but it is a developer tool, and putting it in the primary nav says
+            it is a destination on a par with the simulator. It lives in the
+            footer instead. */}
         <nav className="topnav">
           <NavLink to="/" end>
             Overview
           </NavLink>
           <NavLink to="/simulator">Simulator</NavLink>
           <NavLink to="/cases">Case studies</NavLink>
-          <a
-            href="/api/docs"
-            target="_blank"
-            rel="noreferrer"
-            title="The engine's OpenAPI schema — generated from the same Pydantic contract the model validates against"
-          >
-            API
-          </a>
         </nav>
       </header>
 
