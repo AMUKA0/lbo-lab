@@ -309,9 +309,22 @@ class LifecycleEvent:
 
 
 # Coverage below this is where a credit committee starts paying attention, and
-# where most maintenance covenants of the modern era were actually set.
+# where most maintenance covenants of the modern era were actually set. Below
+# 1.0× is categorically different: operations no longer earn the interest bill
+# at all, and the gap is being funded from somewhere else.
 _COVERAGE_WATCH = 2.0
+_COVERAGE_CRITICAL = 1.0
 _LEVERAGE_WATCH = 6.0
+
+
+def _coverage_band(coverage: float | None) -> str:
+    if coverage is None:
+        return "ok"
+    if coverage < _COVERAGE_CRITICAL:
+        return "critical"
+    if coverage < _COVERAGE_WATCH:
+        return "watch"
+    return "ok"
 
 
 def lifecycle(result) -> list[LifecycleEvent]:
@@ -335,10 +348,21 @@ def lifecycle(result) -> list[LifecycleEvent]:
         )
     ]
 
+    # Threshold events fire on a CROSSING, not on every year the threshold is
+    # breached. Otherwise a long hold buries its actual decisions under twenty
+    # rows of "coverage is still low", and the reader learns nothing they could
+    # not get from the chart.
     prev_revolver = 0.0
+    coverage_band = "ok"
+    levered = False
+    revolver_exhausted = False
+    worst_coverage: tuple[float, int] | None = None
+
     for y in result.years:
         coverage = y.ebitda / y.cash_interest_total if y.cash_interest_total > 0 else None
         leverage = (y.total_debt_closing - y.closing_cash) / y.ebitda if y.ebitda else None
+        if coverage is not None and (worst_coverage is None or coverage < worst_coverage[0]):
+            worst_coverage = (coverage, y.year)
 
         if y.pik_elections:
             names = ", ".join(y.pik_elections)
@@ -353,6 +377,19 @@ def lifecycle(result) -> list[LifecycleEvent]:
                     "it — relief, not a cure."
                 ),
                 tone="watch",
+            ))
+
+        if y.divestiture_proceeds > 0:
+            what = ", ".join(y.divestiture_labels)
+            events.append(LifecycleEvent(
+                year=y.year, kind="divestiture",
+                title=f"Divestiture — {_m(y.divestiture_proceeds)} to debt paydown",
+                detail=(
+                    f"{what}. Proceeds net of {_m(y.divestiture_fees)} of sale costs and "
+                    f"{_m(y.divestiture_tax)} of tax on the gain, applied senior-first as "
+                    "a credit agreement requires of a mandatory prepayment."
+                ),
+                tone="good",
             ))
 
         if y.recap_raised > 0:
@@ -392,31 +429,101 @@ def lifecycle(result) -> list[LifecycleEvent]:
                 ),
                 tone="watch",
             ))
+        # Effectively fully drawn is a separate and much worse signal than a draw.
+        if (
+            not revolver_exhausted
+            and a.revolver.commitment > 0
+            and y.revolver_closing >= 0.95 * a.revolver.commitment
+        ):
+            revolver_exhausted = True
+            events.append(LifecycleEvent(
+                year=y.year, kind="revolver",
+                title="Revolver effectively exhausted",
+                detail=(
+                    "The facility is drawn to the commitment. There is no headroom left "
+                    "for a further shortfall, so the next bad year has nothing behind it."
+                ),
+                tone="bad",
+            ))
         prev_revolver = y.revolver_closing
 
-        if coverage is not None and coverage < _COVERAGE_WATCH:
-            events.append(LifecycleEvent(
-                year=y.year, kind="coverage",
-                title=f"Interest coverage {coverage:.2f}×",
-                detail=(
-                    f"EBITDA covers cash interest {coverage:.2f} times, below the {_COVERAGE_WATCH:.1f}× "
-                    "level most maintenance covenants of the modern era were set at. "
-                    "Not a default in this model, which tests liquidity rather than "
-                    "covenants — but the point where a lender starts asking questions."
-                ),
-                tone="bad" if coverage < 1.0 else "watch",
-            ))
+        band = _coverage_band(coverage)
+        if band != coverage_band and coverage is not None:
+            worsening = ["ok", "watch", "critical"].index(band) > [
+                "ok", "watch", "critical"
+            ].index(coverage_band)
+            if band == "critical":
+                events.append(LifecycleEvent(
+                    year=y.year, kind="coverage",
+                    title=f"Interest coverage falls through 1.0× — {coverage:.2f}×",
+                    detail=(
+                        "Operations no longer earn the cash interest bill at all. Whatever "
+                        "is paying it — the revolver, the balance sheet, a PIK election — "
+                        "is finite, and this is the point at which the deal stops being a "
+                        "question of returns and becomes a question of survival."
+                    ),
+                    tone="bad",
+                ))
+            elif band == "watch" and worsening:
+                events.append(LifecycleEvent(
+                    year=y.year, kind="coverage",
+                    title=f"Interest coverage falls through 2.0× — {coverage:.2f}×",
+                    detail=(
+                        f"Below the {_COVERAGE_WATCH:.1f}× level most maintenance covenants "
+                        "of the modern era were set at. Not a default in this model, which "
+                        "tests liquidity rather than covenants — but the point where a "
+                        "lender starts asking questions."
+                    ),
+                    tone="watch",
+                ))
+            else:
+                events.append(LifecycleEvent(
+                    year=y.year, kind="coverage",
+                    title=f"Interest coverage recovers to {coverage:.2f}×",
+                    detail=(
+                        "Back above the level a lender watches. Recovery is as much a part "
+                        "of the record as the fall, and a timeline that only marks bad news "
+                        "would misrepresent the hold."
+                    ),
+                    tone="good",
+                ))
+            coverage_band = band
 
-        if leverage is not None and leverage > _LEVERAGE_WATCH:
+        if leverage is not None and (leverage > _LEVERAGE_WATCH) != levered:
+            levered = leverage > _LEVERAGE_WATCH
+            if levered:
+                events.append(LifecycleEvent(
+                    year=y.year, kind="leverage",
+                    title=f"Net leverage rises through {_LEVERAGE_WATCH:.1f}× — {leverage:.2f}×",
+                    detail=(
+                        "Outside the band the guardrails flag as sustainable. Note that "
+                        "leverage can rise without a single dollar of new borrowing: a "
+                        "falling EBITDA moves the ratio on its own, and PIK accretion "
+                        "moves the numerator at the same time."
+                    ),
+                    tone="watch",
+                ))
+            else:
+                events.append(LifecycleEvent(
+                    year=y.year, kind="leverage",
+                    title=f"Net leverage back inside {_LEVERAGE_WATCH:.1f}× — {leverage:.2f}×",
+                    detail="Deleveraging has brought the structure back into the market band.",
+                    tone="good",
+                ))
+
+    # One low-water mark, only when it is not already the year of a crossing —
+    # otherwise the same fact appears twice in consecutive rows.
+    if worst_coverage is not None and worst_coverage[0] < _COVERAGE_WATCH:
+        value, year = worst_coverage
+        if not any(e.kind == "coverage" and e.year == year for e in events):
             events.append(LifecycleEvent(
-                year=y.year, kind="leverage",
-                title=f"Net leverage {leverage:.2f}×",
-                detail=(
-                    f"Above the {_LEVERAGE_WATCH:.1f}× the guardrails flag as outside the "
-                    "market band for a sustainable structure."
-                ),
-                tone="watch",
+                year=year, kind="coverage",
+                title=f"Coverage low point — {value:.2f}×",
+                detail="The tightest year of the hold on cash interest cover.",
+                tone="bad" if value < _COVERAGE_CRITICAL else "watch",
             ))
+        events.sort(key=lambda e: e.year)
+
 
     last = result.years[-1]
     wiped = result.exit_equity <= 0

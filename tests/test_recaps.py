@@ -299,3 +299,64 @@ class TestDivestitures:
     def test_a_sale_cannot_fall_outside_the_hold(self, rich_deal):
         with pytest.raises(ValueError, match="hold"):
             self._with_sale(rich_deal, year=rich_deal.hold_years + 1, proceeds=100.0)
+
+
+class TestLifecycle:
+    """The lifecycle is a reading of a completed run, not a second model. Its
+    only real failure mode is noise: a threshold that re-fires every year it is
+    breached buries the events that represent an actual decision."""
+
+    def _long_stress(self, deal: Assumptions) -> Assumptions:
+        """Coverage below the watch level for the whole hold — the shape that
+        used to produce one warning per year."""
+        payload = deal.model_dump()
+        payload["operating"]["ebitda_margin"] = [0.192, 0.10, 0.10, 0.10, 0.10]
+        payload["revolver"]["commitment"] = 400.0
+        return Assumptions.model_validate(payload)
+
+    def test_a_sustained_breach_fires_once_not_every_year(self, rich_deal):
+        from lbo_engine.analysis import lifecycle
+
+        r = run_lbo(self._long_stress(rich_deal))
+        events = lifecycle(r)
+
+        coverage = [e for e in events if e.kind == "coverage"]
+        # A crossing down, optionally a crossing back up, and at most one
+        # low-water mark — never one per year of a five-year hold.
+        assert len(coverage) <= 3, [e.title for e in coverage]
+        years = [e.year for e in coverage]
+        assert len(years) == len(set(years)), "two coverage events in the same year"
+
+    def test_crossings_are_reported_in_both_directions(self, rich_deal):
+        """A timeline that only marks bad news misrepresents the hold."""
+        from lbo_engine.analysis import lifecycle
+
+        payload = rich_deal.model_dump()
+        # Coverage 3.17 -> 1.76 -> 1.82 -> 3.69 -> 4.81: down through the watch
+        # level in year two, back above it in year four.
+        payload["operating"]["ebitda_margin"] = [0.192, 0.10, 0.10, 0.19, 0.22]
+        payload["revolver"]["commitment"] = 400.0
+        events = lifecycle(run_lbo(Assumptions.model_validate(payload)))
+
+        titles = " ".join(e.title for e in events if e.kind == "coverage")
+        assert "falls through" in titles
+        assert "recovers" in titles
+
+    def test_a_healthy_deal_has_almost_no_events(self, rich_deal):
+        """The base case should read as a straight line: a cheque and an exit."""
+        from lbo_engine.analysis import lifecycle
+
+        events = lifecycle(run_lbo(rich_deal))
+        assert [e.kind for e in events] == ["entry", "exit"]
+
+    def test_decisions_are_reported_every_time_they_happen(self, rich_deal):
+        """Thresholds dedupe; *decisions* must not. Two recaps are two events."""
+        from lbo_engine.analysis import lifecycle
+
+        payload = rich_deal.model_dump()
+        payload["recaps"] = [
+            DividendRecap(year=2, target_leverage_turns=5.0).model_dump(),
+            DividendRecap(year=4, target_leverage_turns=4.5).model_dump(),
+        ]
+        events = lifecycle(run_lbo(Assumptions.model_validate(payload)))
+        assert len([e for e in events if e.kind == "recap"]) == 2
