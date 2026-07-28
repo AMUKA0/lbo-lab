@@ -35,6 +35,22 @@ npm run build --prefix web && uvicorn api.main:app --port 8000
 
 The interactive API schema is at `/api/docs`.
 
+## Deploying it
+
+The `Dockerfile` is two-stage — Node builds the client, Python runs it — and deliberately host-agnostic, so the same image runs on Cloud Run, Render, Fly, Railway or a plain VM. It binds to `$PORT`, runs as a non-root user, and needs no environment variables, database or secrets: the app is stateless.
+
+```bash
+docker build -t lbo-lab . && docker run -p 8000:8000 lbo-lab
+```
+
+On Google Cloud Run, which builds remotely so Docker isn't needed locally:
+
+```bash
+gcloud run deploy lbo-lab --source . --region europe-west2
+```
+
+Cloud Run scales to zero, so a visit after an idle period waits a few seconds for the container to start. That is the cost of the free tier; `--min-instances=1` removes it and stops being free.
+
 ## Test suite
 
 ```bash
