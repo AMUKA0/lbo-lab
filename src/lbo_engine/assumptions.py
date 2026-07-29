@@ -158,6 +158,16 @@ class Divestiture(BaseModel):
         default=0.0, ge=0,
         description="Gain over tax basis, taxed at the operating tax rate in the sale year",
     )
+    # Revenue that leaves with the business. Needed because working capital is
+    # driven off the change in revenue: without it the model books a cash inflow
+    # from "releasing" working capital that actually departed with the divested
+    # unit and was already inside the sale consideration. On RJR that double
+    # count was worth about 0.19x of MOIC, arriving in precisely the two years
+    # the structure was trying to survive.
+    revenue_removed: float = Field(
+        default=0.0, ge=0,
+        description="Revenue leaving with the business, excluded from the working-capital swing",
+    )
     label: str = Field(default="Divestiture", description="What was sold")
 
 
@@ -195,6 +205,16 @@ class EquityInjection(BaseModel):
     debt_retired: float = Field(
         default=0.0, ge=0,
         description="Face value of debt extinguished, by repurchase below par or conversion",
+    )
+    # JUNIOR-first, and the distinction from a divestiture matters. Asset-sale
+    # proceeds are a contractual mandatory prepayment, so they run senior-first
+    # whether the issuer likes it or not. A discounted repurchase is the issuer
+    # *choosing* what to buy, and it always buys the most discounted paper —
+    # which is the junior end. Blackstone was not repurchasing money-good senior
+    # CMBS at forty cents; the discount was in the mezzanine.
+    retire_junior_first: bool = Field(
+        default=True,
+        description="Retire the junior end first (an elective repurchase) rather than senior-first",
     )
     label: str = Field(default="Follow-on equity", description="What the injection was for")
 

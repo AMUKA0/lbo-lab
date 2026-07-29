@@ -392,6 +392,14 @@ HILTON = CaseStudy(
                "asset-light shift.", "hilton-bsic"),
     ],
     model_caveats=[
+        "The $2bn converted to preferred is modelled as debt *extinguished*, and it was "
+        "not. Preferred ranks ahead of the sponsor's common: it survives to exit, "
+        "accretes, and is paid first out of proceeds. The engine has debt tranches and "
+        "equity with nothing in between, and cannot add a layer mid-hold, so that claim "
+        "is handed to Blackstone instead. It is worth roughly half a turn of MOIC. Read "
+        "the 3.1× as an upper bound: the like-for-like figure against the reported ~3.0× "
+        "is materially lower, and the agreement between the two should not be read as "
+        "the model validating itself.",
         "The 2010 restructuring is modelled, but as a single year-three event at the "
         "reported quantum. The real sequence ran over months and included exchanges "
         "this model collapses into one line. The cash figure is also the softest input "
@@ -450,8 +458,13 @@ HILTON = CaseStudy(
             "renegotiated. Model that renegotiation as it was reported — about $2bn of "
             "Hilton's own debt bought back for roughly $800m because the credit market "
             "had written it down, plus a further ~$2bn converted to preferred — and the "
-            "deal runs the full eleven years and returns about 3.0×, against a reported "
-            "~3.0×. "
+            "deal runs the full eleven years and returns about 3.1×. "
+            "Do not read that against the reported ~3.0× as though the model had "
+            "reproduced it: roughly half a turn of that comes from modelling the $2bn "
+            "debt-for-preferred conversion as debt simply extinguished, because the "
+            "engine has no layer between debt and equity. On a like-for-like basis the "
+            "comparable figure is lower, and the honest claim is narrower — the model "
+            "locates the crisis, not the multiple. "
             "Both halves of that matter. The break located the crisis from the numbers "
             "alone; the recovery shows the model reproduces the outcome once it is told "
             "what the sponsor actually did. Neither is worth much without the other, and "
@@ -674,8 +687,10 @@ HCA = CaseStudy(
             "different measurements. It also now carries HCA's 2010 dividend "
             "recapitalisation, sized to the ~$4.3bn actually paid — the mechanic this "
             "case originally existed to flag as missing. "
-            "Two outputs can be checked rather than taken on trust: modelled 2010 "
-            "revenue of about $30.3bn against $30.7bn reported, and exit equity of "
+            "Two outputs can be checked rather than taken on trust. Year four is 2010 "
+            "on a hold that closed in November 2006, and modelled revenue there is "
+            "$29.1bn against $30.7bn reported — a 5% miss, not the 1% an earlier version "
+            "of this note claimed by quoting year five against a 2010 figure. Exit equity is "
             "roughly $14.2bn against an IPO that valued the company near $15.8bn. "
             "One cannot: modelled 2010 debt lands at $31.1bn against $28.2bn reported. "
             "The model can match the reported dividends or the reported debt but not "
@@ -1061,10 +1076,12 @@ RJR = CaseStudy(
             # half-the-proceeds assumption would have charged.
             Divestiture(
                 year=1, proceeds=2500.0, taxable_gain=500.0,
+                revenue_removed=2400.0,
                 label="European Nabisco businesses (BSN/Danone)",
             ),
             Divestiture(
                 year=2, proceeds=2600.0, taxable_gain=520.0,
+                revenue_removed=2800.0,
                 label="Del Monte and the balance of the disposal programme",
             ),
         ],
@@ -1118,10 +1135,12 @@ RJR = CaseStudy(
             # half-the-proceeds assumption would have charged.
             Divestiture(
                 year=1, proceeds=2500.0, taxable_gain=500.0,
+                revenue_removed=2400.0,
                 label="European Nabisco businesses (BSN/Danone)",
             ),
             Divestiture(
                 year=2, proceeds=2600.0, taxable_gain=520.0,
+                revenue_removed=2800.0,
                 label="Del Monte and the balance of the disposal programme",
             ),
         ],
@@ -1145,7 +1164,7 @@ RJR = CaseStudy(
                "*equity* price rather than enterprise value — a common and material "
                "error, and worth checking whenever a historic multiple looks low.",
                "rjr-wapo"),
-        Figure("Capital structure", "~$21.7bn debt", "reported",
+        Figure("Capital structure", "~$21.7bn reported, $27.9bn modelled", "reported",
                "Senior bank facilities, a subordinated bridge later termed out into "
                "high yield, and a large PIK / exchangeable-preferred strip. Roughly "
                "87% debt.", "barbarians"),
@@ -1177,10 +1196,11 @@ RJR = CaseStudy(
         "between, so the preferred is modelled as a PIK debt tranche. That is the right "
         "economic approximation but it makes the sponsor's position look more levered "
         "than it was.",
-        "The 1990 recapitalisation — roughly $1.7bn of fresh equity and $2.25bn of new "
-        "bank loans, forced by the reset provisions on the PIK paper — is not modelled. "
-        "Follow-on equity is a real feature of distressed holds and one the engine "
-        "cannot currently express.",
+        "The 1990 recapitalisation is modelled as the $1.7bn of fresh equity KKR "
+        "injected, but not the ~$2.25bn of new bank loans raised alongside it, nor the "
+        "further refinancings after 1993. The realised column therefore has less "
+        "liquidity in the back half of the hold than RJR actually had, which is part of "
+        "why it breaks in year five where the real company limped on to a 1995 exit.",
         "1989 pre-TCJA tax law. The 80% NOL limitation is switched off for this case, "
         "and the interest deduction is unlimited — there was no §163(j) cap.",
     ],
@@ -1205,6 +1225,35 @@ RJR = CaseStudy(
         ),
     ),
     break_notes=[
+        BreakNote(
+            column="underwriting",
+            year=4,
+            calendar="1992",
+            headline="The plan does not finance itself",
+            what_happened=(
+                "Nothing, in the sense the other break notes mean it — no external shock "
+                "lands here. This is the deal as KKR signed it, with the divestitures "
+                "clearing at the assumed prices on the assumed timetable, and it still "
+                "runs out of liquidity. The real company survived these years only "
+                "because KKR injected $1.7bn of fresh equity in 1990 and arranged $2.25bn "
+                "of new bank loans alongside it, then refinanced repeatedly."
+            ),
+            what_the_engine_saw=(
+                "Cash interest of roughly $2.3bn plus PIK accrual against a $3.1bn EBITDA "
+                "that the disposals have shrunk to about $2.6bn. Net debt rises through "
+                "the hold rather than falling, because 15% accretion on the preferred "
+                "strip outruns what operations can repay. The $5.1bn of sale proceeds "
+                "buys two years and no more."
+            ),
+            what_the_engine_cannot_see=(
+                "Follow-on capital beyond the single injection it models — the new bank "
+                "debt raised with the 1990 recapitalisation, the reset-driven refinancing, "
+                "the later amendments. The break should be read as 'this structure was "
+                "never self-financing', which is true and was true, rather than as a "
+                "prediction that RJR collapsed in 1992. It did not; it was repeatedly "
+                "rescued, and the equity still earned nothing."
+            ),
+        ),
         BreakNote(
             column="realised",
             year=5,
@@ -1232,11 +1281,10 @@ RJR = CaseStudy(
                 "that leaves nothing, and the revolver cannot cover it."
             ),
             what_the_engine_cannot_see=(
-                "That a sponsor can keep a company alive through repeated "
-                "recapitalisation. The 1990 equity injection, the reset-driven "
-                "refinancing and the later amendments are all follow-on capital and "
-                "renegotiation, none of which the engine models — it either services "
-                "the debt from operations and asset sales, or reports that it cannot. "
+                "How far a sponsor will go to keep a company alive. The 1990 equity "
+                "injection is modelled; the $2.25bn of new bank loans raised alongside "
+                "it, the reset-driven refinancing and the later amendments are not. The "
+                "engine has one rescue mechanic and RJR needed a decade of them. "
                 "The break is a fair statement that the structure had no capacity left "
                 "to absorb a shock by 1993, which is exactly why the equity earned "
                 "nothing over six years even though the business survived."
@@ -1246,21 +1294,21 @@ RJR = CaseStudy(
     source_keys=["rjr-wapo", "rjr-10k94", "barbarians"],
     column_notes={
         "underwriting": (
-            "The model very nearly reproduces the outcome from pre-close "
-            "information alone: about 0.8× against a reported ~1.0×, and a negative "
-            "IRR against a reported one of well under 1%. The winner's curse was "
-            "visible at signing. "
-            "Note what carries it. Cash interest plus PIK accrual runs close to the "
-            "whole of a $3.1bn EBITDA, and the structure services itself only because "
-            "the divestitures land — $2.5bn in year one, $2.6bn in year two, less tax "
-            "on the gains. Remove them and the engine refuses to print a schedule at "
-            "all, which is the honest verdict on the structure considered alone. A "
-            "deal that works only if the asset sales clear at the assumed prices, on "
-            "the assumed timetable, is a far riskier proposition than an IRR implies. "
-            "Watch net debt in the later years: it *rises*, because 15% PIK accretion "
-            "on the preferred strip outruns everything operations can repay. That is "
-            "the mechanism that forced the 1990 recapitalisation, visible here in the "
-            "plan as written."
+            "This column used to survive and return about 0.8×, close to the reported "
+            "~1.0×, and that agreement was partly an artefact. Working capital was "
+            "driven off the change in revenue, so when the food businesses were sold the "
+            "model booked a cash release from working capital that had in fact left with "
+            "them and was already inside the sale consideration — roughly $618m of "
+            "phantom liquidity, arriving in exactly the two years the structure was "
+            "trying to survive. With the divested revenue excluded from that swing, the "
+            "structure runs out of liquidity in year four. "
+            "That is the more honest answer, and a harsher one: on pre-close information "
+            "alone, this deal does not finance itself even with the divestitures landing "
+            "on schedule. Cash interest plus PIK accrual runs close to the whole of a "
+            "$3.1bn EBITDA, and net debt *rises* through the hold because 15% accretion "
+            "on the preferred strip outruns anything operations can repay. KKR signed it "
+            "anyway, needed $1.7bn of rescue equity within eighteen months, and earned "
+            "nothing over six years."
         ),
         "realised": (
             "The same plan holds for four years, then breaks in year five — 1993. "

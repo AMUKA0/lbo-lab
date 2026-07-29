@@ -63,7 +63,10 @@ function Tip({ title, rows }: { title: string; rows: TipRow[] }) {
  * Entry and exit equity are anchored to zero because they are levels, not
  * movements.
  */
-export function BridgeWaterfall({ bridge }: { bridge: Bridge }) {
+export function BridgeWaterfall({ bridge }: { bridge: Bridge | null }) {
+  // No exit, no gain to decompose. Callers pass the bridge straight through,
+  // so the null case is handled here rather than at every call site.
+  if (!bridge) return null;
   const steps = [
     { name: "Entry equity", delta: bridge.entry_equity, anchor: true },
     { name: "EBITDA growth", delta: bridge.ebitda_growth, anchor: false },
@@ -73,6 +76,9 @@ export function BridgeWaterfall({ bridge }: { bridge: Bridge }) {
     // waterfall rather than carrying a permanent zero-height step.
     ...(bridge.recapitalisation !== 0
       ? [{ name: "Recap", delta: bridge.recapitalisation, anchor: false }]
+      : []),
+    ...(bridge.follow_on_equity !== 0
+      ? [{ name: "Sponsor capital", delta: bridge.follow_on_equity, anchor: false }]
       : []),
     { name: "Fees", delta: bridge.fee_drag, anchor: false },
     { name: "Total proceeds", delta: bridge.total_proceeds, anchor: true },

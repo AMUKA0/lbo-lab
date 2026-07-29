@@ -13,7 +13,7 @@ export function KpiStrip({ run }: { run: RunResult }) {
   const entryLev = run.entry_net_leverage;
   const exitLev = run.exit_net_leverage;
   const deleveraged = entryLev != null && exitLev != null ? entryLev - exitLev : null;
-  const dividends = run.bridge.dividends;
+  const dividends = run.bridge?.dividends ?? 0;
 
   return (
     <div className="kpi-strip">
@@ -28,7 +28,7 @@ export function KpiStrip({ run }: { run: RunResult }) {
         v={fmtMult(run.moic, 2)}
         sub={
           dividends
-            ? `on ${fmtMoney(run.entry_equity)} in, ${fmtMoney(run.bridge.total_proceeds)} back`
+            ? `on ${fmtMoney(run.entry_equity)} in, ${fmtMoney(run.bridge?.total_proceeds)} back`
             : `${fmtMoney(run.entry_equity)} → ${fmtMoney(run.exit_equity)}`
         }
       />

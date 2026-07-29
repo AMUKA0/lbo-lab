@@ -182,7 +182,12 @@ class LBOResult:
         """
         flows = [-self.entry_equity] + [0.0] * self.assumptions.hold_years
         for y in self.years:
-            flows[y.year] += y.recap_dividend - y.equity_injected
+            # A recap is a year-END event, so it lands at index `year`. An
+            # injection funds the year it goes into and is spent at its START,
+            # which is index `year - 1` — discounting it a year later than it
+            # was actually paid understates its cost and flatters IRR.
+            flows[y.year] += y.recap_dividend
+            flows[y.year - 1] -= y.equity_injected
         flows[-1] += self.exit_equity
         return flows
 
@@ -233,6 +238,10 @@ def run_lbo(a: Assumptions) -> LBOResult:
     opening_cash = su.cash_to_balance_sheet
     nol_opening = 0.0
     prev_revenue = a.operating.entry_revenue
+    # Revenue that left with a business sold at the end of the previous year.
+    # The resulting fall in revenue is inorganic, so it must not drive a working
+    # capital release — that cash went with the business.
+    inorganic_decline = 0.0
 
     years: list[YearRow] = []
     for i in range(a.hold_years):
@@ -242,7 +251,8 @@ def run_lbo(a: Assumptions) -> LBOResult:
         da = a.operating.da_pct_revenue * revenue
         ebit = ebitda - da
         capex = a.operating.capex_pct_revenue * revenue
-        delta_nwc = a.operating.nwc_pct_revenue * (revenue - prev_revenue)
+        organic_change = (revenue - prev_revenue) + inorganic_decline
+        delta_nwc = a.operating.nwc_pct_revenue * organic_change
 
         # Follow-on equity funds the year it goes into, so it lands in opening
         # cash before the waterfall rather than at year end like the other two
@@ -258,15 +268,20 @@ def run_lbo(a: Assumptions) -> LBOResult:
         # paper it no longer owes.
         if retired > 0:
             remaining = retired
-            repay = min(revolver_opening, remaining)
-            revolver_opening -= repay
-            remaining -= repay
-            for t in a.tranches:
+            junior_first = all(i.retire_junior_first for i in injections if i.debt_retired > 0)
+            order = list(reversed(a.tranches)) if junior_first else list(a.tranches)
+            for t in order:
                 if remaining <= 0:
                     break
                 pay = min(remaining, tranche_opening[t.name])
                 tranche_opening[t.name] -= pay
                 remaining -= pay
+            # The revolver is the most senior claim, so it is repaid last on an
+            # elective repurchase and first on a mandatory one.
+            if remaining > 0:
+                repay = min(revolver_opening, remaining)
+                revolver_opening -= repay
+                remaining -= repay
 
         row = _solve_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
@@ -279,8 +294,10 @@ def run_lbo(a: Assumptions) -> LBOResult:
 
         # Year-end divestitures, applied before any recap: proceeds pay down debt,
         # which is what a sum-of-the-parts underwriting actually relies on.
+        inorganic_decline = 0.0
         for sale in a.divestitures_for(year_no):
             _apply_divestiture(a, sale, row)
+            inorganic_decline += sale.revenue_removed
 
         # Year-end dividend recapitalisation, applied after the year is solved so
         # the new debt accrues no interest until the following year.

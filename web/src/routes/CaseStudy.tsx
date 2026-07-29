@@ -326,6 +326,41 @@ export function CaseStudy() {
           <p className="prose">{data.could_not_have_known}</p>
         </Card>
 
+        {data.column_deltas.length > 0 && (
+          <>
+            <SectionHead
+              title="What differs between the two columns"
+              eyebrow="Beyond the operating path itself"
+            />
+            <p className="prose" style={{ marginBottom: "var(--s4)" }}>
+              The capital structure is identical in both — same EBITDA, same entry
+              multiple, same tranches at the same rates; a test enforces it. These are
+              the remaining inputs that differ. They are here because a reviewer found
+              that Hilton's realised column quietly carried 150bp less capex, and that,
+              not the revenue collapse, was the difference between running eleven years
+              and breaking in year two.
+            </p>
+            <table className="data" style={{ marginBottom: "var(--s7)" }}>
+              <thead>
+                <tr>
+                  <th>Input</th>
+                  <th>As signed</th>
+                  <th>Actual path</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.column_deltas.map((d) => (
+                  <tr key={d.field}>
+                    <td className="row-label">{d.field}</td>
+                    <td>{d.underwriting}</td>
+                    <td>{d.realised}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
         <SectionHead
           title="Where this model cannot follow the deal"
           eyebrow="Stated, not closed"

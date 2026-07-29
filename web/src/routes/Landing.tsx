@@ -40,7 +40,7 @@ const FEATURES = [
   {
     no: "06",
     title: "Four real deals, replayed",
-    body: "Hilton, HCA, TXU and RJR Nabisco, each reconstructed from information available before close and run through this engine — then run again on the operating path that actually happened. Every input is sourced and labelled reported, derived or estimated. Three of the eight runs refuse to produce a schedule, which is the finding rather than a fault.",
+    body: "Hilton, HCA, TXU and RJR Nabisco, each reconstructed from information available before close and run through this engine — then run again on the operating path that actually happened. Every input is sourced and labelled reported, derived or estimated. Two of the eight runs refuse to produce a schedule, which is the finding rather than a fault.",
   },
   {
     no: "07",
@@ -81,7 +81,7 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="159" k="tests · golden case solved by hand" />
+          <Stat v="173" k="tests · golden case solved by hand" />
           <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
           <Stat v="1e-10" k="tolerance on the interest solve" />

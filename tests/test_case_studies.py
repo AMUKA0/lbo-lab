@@ -92,6 +92,24 @@ def test_the_realised_column_shares_the_structure(case):
     assert u.transaction_fee_pct_ev == r.transaction_fee_pct_ev
     assert u.financing_fee_pct_debt == r.financing_fee_pct_debt
 
+    # Operating cash items too. These were unchecked, and the gap was real:
+    # Hilton's realised column quietly carried 150bp less capex, which is what
+    # kept it alive to year eleven instead of breaking in year two. They may
+    # still differ — a company genuinely does cut capex in a downturn — but the
+    # difference has to be surfaced on the page, not discovered by a reviewer.
+    from api.main import _column_deltas
+
+    disclosed = {d["field"] for d in _column_deltas(case)}
+    for label, a, b in (
+        ("Capex (% of revenue)", u.operating.capex_pct_revenue, r.operating.capex_pct_revenue),
+        ("D&A (% of revenue)", u.operating.da_pct_revenue, r.operating.da_pct_revenue),
+        ("Working capital (% of revenue)", u.operating.nwc_pct_revenue, r.operating.nwc_pct_revenue),
+        ("Cash sweep", u.cash_sweep_pct, r.cash_sweep_pct),
+        ("Minimum cash", u.minimum_cash, r.minimum_cash),
+    ):
+        if a != b:
+            assert label in disclosed, f"{case.slug}: {label} differs but is not disclosed"
+
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
 def test_every_cited_source_resolves(case):
@@ -278,3 +296,92 @@ def test_underwriting_never_assumes_it_will_need_rescuing(case):
         f"{case.slug} underwrites {len(case.underwriting.injections)} rescue "
         "injection(s) — that is hindsight, not a plan"
     )
+
+
+BRIDGE_ROWS = (
+    "ebitda_growth",
+    "multiple_expansion",
+    "deleveraging",
+    "recapitalisation",
+    "follow_on_equity",
+    "fee_drag",
+)
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_the_rows_the_client_displays_sum_to_the_stated_gain(slug):
+    """The engine-level identity test passes whether or not the client renders
+    every component, and that gap shipped: `follow_on_equity` was missing from
+    both the bridge table and the waterfall, so Hilton's realised column showed
+    rows summing to $15,398m under a stated gain of $14,598m — with "0.00 —
+    exact" printed underneath.
+
+    This asserts over exactly the field set the client iterates. Adding a
+    component to the bridge without adding it to the display now fails here.
+    """
+    body = client.get(f"/api/cases/{slug}").json()
+    for column in ("underwriting", "realised"):
+        col = body[column]
+        run = col and (col.get("run") or col.get("partial_run"))
+        if not run or run["bridge"] is None:
+            continue  # a truncated run has no exit and so no bridge
+        b = run["bridge"]
+        assert sum(b[k] for k in BRIDGE_ROWS) == pytest.approx(b["equity_gain"], abs=1e-6), (
+            f"{slug}/{column}: displayed rows do not sum to the stated gain"
+        )
+
+
+def test_every_bridge_component_is_in_the_displayed_row_set():
+    """Guards the guard: if a new term is added to BridgeOut, it must be added
+    to BRIDGE_ROWS above (and therefore considered for the client) rather than
+    silently omitted from both."""
+    from api.serialisation import BridgeOut
+
+    computed = {"total_value_created", "equity_gain", "reconciliation_error",
+                "entry_equity", "exit_equity", "dividends", "total_invested",
+                "total_proceeds"}
+    components = set(BridgeOut.model_fields) - computed
+    assert components == set(BRIDGE_ROWS), (
+        f"bridge components not in the displayed set: {components - set(BRIDGE_ROWS)}"
+    )
+
+
+STALE_CLAIMS = (
+    "is not modelled",
+    "cannot currently express",
+    "the engine has no",
+    "no divestiture mechanic",
+    "no recap mechanic",
+)
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+def test_caveats_do_not_deny_mechanics_the_engine_now_has(case):
+    """Caveats rot as the engine grows. RJR carried "the 1990 recapitalisation
+    is not modelled" for as long as it took to build the injection mechanic and
+    then use it on that exact case — in two places, a `model_caveat` and a
+    `break_note`, neither of which the existing staleness guard covered.
+
+    This checks the denial phrases against the mechanics actually in use.
+    """
+    a = case.realised or case.underwriting
+    in_use = {
+        "injections": bool(a.injections),
+        "divestitures": bool(a.divestitures),
+        "recaps": bool(a.recaps),
+    }
+    prose = " ".join(case.model_caveats)
+    for note in case.break_notes:
+        prose += " " + note.what_the_engine_cannot_see + " " + note.what_the_engine_saw
+    lowered = prose.lower()
+
+    for phrase in STALE_CLAIMS:
+        if phrase not in lowered:
+            continue
+        window = lowered[max(0, lowered.index(phrase) - 200):lowered.index(phrase) + 200]
+        for mechanic, used in in_use.items():
+            hint = {"injections": "recapitalisation", "divestitures": "divestiture",
+                    "recaps": "dividend recap"}[mechanic]
+            assert not (used and hint in window), (
+                f"{case.slug}: {phrase!r} sits beside {hint!r}, which this case uses"
+            )

@@ -1,8 +1,14 @@
 """Returns: IRR, MOIC and the value-creation bridge.
 
-IRR is solved by bisection on the NPV of the sponsor's equity cash flows —
-robust for LBO-shaped flows (one outflow, later inflows: a unique sign change
-guarantees a unique real IRR above -100%).
+IRR is solved by bisection on the NPV of the sponsor's equity cash flows.
+
+A caveat on uniqueness. With the classic LBO shape — one outflow at close, then
+inflows — a single sign change guarantees one real IRR above -100%. Follow-on
+sponsor capital breaks that: a mid-hold injection is a second negative flow, so
+the vector can change sign more than once and admit multiple roots. The
+bisection below returns the one bracketed in (-99.99%, 10000%), which for a
+rescued deal is the economically meaningful root but is not provably unique.
+A deal needing several injections should be read on MOIC as well as IRR.
 
 The bridge decomposes the equity gain into the three standard drivers, plus
 the fee drag, using the conventional attribution:

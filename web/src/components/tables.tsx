@@ -428,12 +428,21 @@ export function ScenarioTable({ scenarios }: { scenarios: Scenario[] }) {
 /** The bridge as numbers, with the reconciliation shown rather than claimed. */
 export function BridgeTable({ run }: { run: RunResult }) {
   const b = run.bridge;
+  // A run that never reached an exit has no gain to decompose.
+  if (!b) return null;
   const rows: [string, number][] = [
     ["EBITDA growth × entry multiple", b.ebitda_growth],
     ["Multiple change × exit EBITDA", b.multiple_expansion],
     ["Net debt paydown", b.deleveraging],
     ...(b.recapitalisation !== 0
       ? ([["Recap debt raised (gross)", b.recapitalisation]] as [string, number][])
+      : []),
+    // Every non-zero component must appear. Omitting one and then printing a
+    // reconciliation underneath is worse than printing no reconciliation at all:
+    // this row was missing, so Hilton's realised bridge displayed rows summing to
+    // $15,398m under a stated gain of $14,598m, with "0.00 — exact" beneath it.
+    ...(b.follow_on_equity !== 0
+      ? ([["Follow-on sponsor capital", b.follow_on_equity]] as [string, number][])
       : []),
     ["Fees (entry, financing, recap, exit)", b.fee_drag],
   ];
@@ -451,8 +460,11 @@ export function BridgeTable({ run }: { run: RunResult }) {
           <tr key={label}>
             <td className="row-label">{label}</td>
             <td className={value >= 0 ? "pos" : "neg"}>{fmtSigned(value)}</td>
+            {/* Suppressed on a loss. Dividing by a negative gain inverts every
+                sign — RJR showed EBITDA growth at −347% and fees at +204% — which
+                is worse than showing nothing. */}
             <td className="mute">
-              {b.equity_gain !== 0 ? fmtPct(value / b.equity_gain, 0) : NA}
+              {b.equity_gain > 0 ? fmtPct(value / b.equity_gain, 0) : NA}
             </td>
           </tr>
         ))}
@@ -467,7 +479,9 @@ export function BridgeTable({ run }: { run: RunResult }) {
         )}
         <tr className="total">
           <td className="row-label">
-            {b.dividends !== 0 ? "Total value created" : "Equity gain"}
+            {b.dividends !== 0 || b.follow_on_equity !== 0
+              ? "Total value created"
+              : "Equity gain"}
           </td>
           <td>{fmtSigned(b.equity_gain)}</td>
           <td className="mute">100%</td>

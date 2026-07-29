@@ -401,9 +401,23 @@ class TestEquityInjection:
         assert rescued.moic < base.moic
         assert sponsor_irr(rescued) < sponsor_irr(base)
 
-    def test_the_injection_is_an_outflow_in_its_year(self, rich_deal):
+    def test_the_injection_is_discounted_from_when_it_is_spent(self, rich_deal):
+        """It funds the year it goes into, so it is spent at that year's START —
+        index year-1 in the flow vector. Booking it at year end discounts it a
+        full year later than it was paid and flatters IRR."""
         r = run_lbo(self._with(rich_deal, year=2, amount=150.0))
-        assert r.equity_cash_flows[2] == pytest.approx(-150.0)
+        assert r.equity_cash_flows[1] == pytest.approx(-150.0)
+        assert r.equity_cash_flows[2] == 0.0
+
+    def test_a_recap_and_an_injection_in_the_same_year_do_not_collide(self, rich_deal):
+        """One is a year-end event and the other a year-start one, so they land
+        in different slots and must not net against each other."""
+        payload = rich_deal.model_dump()
+        payload["recaps"] = [DividendRecap(year=3, amount=100.0).model_dump()]
+        payload["injections"] = [EquityInjection(year=3, amount=60.0).model_dump()]
+        r = run_lbo(Assumptions.model_validate(payload))
+        assert r.equity_cash_flows[2] == pytest.approx(-60.0)
+        assert r.equity_cash_flows[3] == pytest.approx(98.0)
 
     def test_the_bridge_still_reconciles(self, rich_deal):
         b = returns_bridge(run_lbo(self._with(rich_deal, year=2, amount=150.0)))

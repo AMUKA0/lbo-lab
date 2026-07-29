@@ -57,7 +57,7 @@ Cloud Run scales to zero, so a visit after an idle period waits a few seconds fo
 pytest
 ```
 
-159 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+173 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## The case-study library
 
@@ -77,7 +77,11 @@ Every input carries provenance — **reported** (appears in a filing), **derived
 
 **What the no-hindsight claim is and is not.** The underwriting columns follow a stated rule set: the exit multiple is set at or below entry; growth and margin come from the trailing trend or contemporaneous consensus; the structure comes from filings. Two tests hold the line — one fails if any case underwrites multiple expansion, another if the two columns differ in capital structure. But be clear about their limits: the first checks a rule the author already chose to follow, so it prevents regression rather than proving independence, and the second checks entry multiple, EBITDA, tranche terms, revolver and fees — **not** capex, working capital, minimum cash or the cash sweep.
 
-That last gap is real and load-bearing. HCA's realised column runs a 25% cash sweep against the underwriting column's 75%, because HCA never deleveraged — free cash flow went to capex and dividends, and reported debt was still $28.2bn in 2010 against $28bn at close. That is a *structural* term calibrated to a known outcome, it is the right modelling choice, and no test catches it. The realised columns are calibrated to reported outcomes and say so. The underwriting columns are rule-governed reconstructions, not independently verifiable ones. Anyone reading them as a blind out-of-sample test is reading more than is claimed.
+**Said plainly, because the earlier version of this paragraph stopped short.** These underwriting columns were built by someone who already knew the outcomes, and revised when they produced answers that looked wrong. RJR's capital structure was explicitly reverse-solved so the modelled equity cheque would land near KKR's reported one — and the cheque is the MOIC denominator. Operating paths differ between the two columns in more than the news: Hilton's realised column also carries 150bp less capex, and restoring it breaks the deal in year two. Every such delta is now listed per case on the page, but listing them does not make the columns out-of-sample.
+
+So: these are **rule-governed reconstructions by an author who knows the answer**, not blind tests. That is still a worthwhile exercise — the rules are stated, the deltas are disclosed, and three tests stop the most common leaks (multiple expansion, capital structure drift, rescue capital in an underwriting column). It is not a backtest, and nothing here should be read as one.
+
+One result does survive that caveat. Hilton's year-three break is driven by the 2009 RevPAR collapse, which is externally dated and reported rather than fitted — so the model landing on the exact year Blackstone renegotiated is a genuine out-of-sample hit. TXU's and RJR's break years come from margin paths built by someone who knew when the crises were, and should not be claimed the same way.
 
 Two of the eight runs hit a **liquidity break**: operating cash flow stops covering contractual interest and amortisation, and the revolver cannot fund the gap. The engine stops there rather than printing a schedule that quietly runs a negative cash balance — which is what a model without a liquidity constraint does, and why such models never show a deal failing. Each break is reported with the year it happens and a full schedule for the years the structure *did* service, so the drain is legible rather than merely asserted:
 
@@ -168,7 +172,6 @@ Stated openly, because pretending they don't exist is how models lie. These are 
 - **No §382 limitation.** An LBO *is* an ownership change, so a target's pre-existing NOLs would be capped at roughly equity value × the long-term tax-exempt rate. The engine carries them forward unrestricted.
 - **No covenant test and no maturity wall.** The model fails on *liquidity* only — it runs out of cash. That is the rarer of the two real failure modes: most 2008–09 sponsor distress was covenant-driven, and TXU's actual death was a 2014 maturity wall. Coverage below 2.0× is flagged in the lifecycle but nothing acts on it.
 - **The PIK toggle election is greedy.** The engine elects only when a year already fails, which is when the revolver is exhausted — so it will burn revolver capacity at the senior rate for two years rather than PIK at the junior rate earlier. A treasurer looking a year ahead would decide differently, and on TXU that choice is load-bearing.
-- **Interest coverage in the credit stats is on cash interest only.** For a deal with a large PIK strip — RJR's is $1.3–2.2bn a year — total-interest coverage is the more honest ratio and is not shown.
 - **No interest income on balance-sheet cash**, no per-tranche facility tenor, and the cash sweep is a flat percentage rather than the leverage-based step-down grid a credit agreement actually specifies.
 - **No management rollover, option pool, or transaction bonuses** — these dilute sponsor proceeds at exit, typically by low-single-digit percentages of equity value.
 - **No add-on acquisitions** — buy-and-build is a major value-creation lever the model can't express.

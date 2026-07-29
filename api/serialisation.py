@@ -173,7 +173,12 @@ class RunOut(BaseModel):
     moic: float | None
     irr: float | None
     equity_cash_flows: list[float]
-    bridge: BridgeOut
+    # None on a run that never reached an exit. A value bridge decomposes the
+    # gain between entry and exit; with no exit the sponsor is floored at zero
+    # and the identity cannot hold — TXU's truncated run reports a $18.3bn
+    # "reconciliation error" that means nothing. Suppressed for the same reason
+    # IRR and MOIC are.
+    bridge: BridgeOut | None
     lifecycle: list[LifecycleEventOut]
     credit: list[CreditYearOut]
     flags: list[FlagOut]

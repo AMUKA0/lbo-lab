@@ -94,10 +94,20 @@ export interface CaseColumn {
   partial_run: RunResult | null;
 }
 
+/** An input that differs between the two columns. Surfaced because "same
+ *  structure, fed the operating path" is only worth something if the reader can
+ *  see what else moved. */
+export interface ColumnDelta {
+  field: string;
+  underwriting: string;
+  realised: string;
+}
+
 export interface CaseDetail extends CaseSummary {
   thesis: string;
   could_not_have_known: string;
   model_caveats: string[];
+  column_deltas: ColumnDelta[];
   provenance: Figure[];
   sources: SourceRef[];
   underwriting: CaseColumn;

@@ -331,6 +331,8 @@ def _replay(a: Assumptions) -> dict:
             # Deliberately no IRR or MOIC on a partial run: there was no exit in
             # that year, and printing a return for one would be a fabrication.
             partial = run_out(run, check_assumptions(shorter), jsonable(credit))
+            # No exit happened, so there is no gain to decompose.
+            partial.bridge = None
         return {
             "failed": True,
             "message": str(exc),
@@ -369,6 +371,44 @@ def _outcome(case: CaseStudy) -> dict:
         "headline": o.headline,
         "narrative": o.narrative,
     }
+
+
+# Fields that may legitimately differ between the two columns. Anything outside
+# this set differing is drift, not news, and the test suite rejects it.
+_MAY_DIFFER = {
+    "revenue_growth", "ebitda_margin",   # the news itself
+    "hold_years", "exit_multiple",       # when and at what you actually got out
+    "recaps", "divestitures", "injections",  # events that happened
+}
+
+
+def _column_deltas(case: CaseStudy) -> list[dict]:
+    """Every operating input that differs between the columns, spelled out.
+
+    The claim "same structure, fed the operating path that happened" is only
+    worth anything if the reader can see what else moved. Hilton's realised
+    column carries 150bp less capex than its underwriting column, and that --
+    not the revenue collapse -- is the difference between a deal that runs
+    eleven years and one that breaks in year two. It was undisclosed until a
+    reviewer found it.
+    """
+    if case.realised is None:
+        return []
+    u, r = case.underwriting, case.realised
+    out: list[dict] = []
+
+    def add(label, a, b, fmt="{:.1%}"):
+        if a != b:
+            out.append({"field": label, "underwriting": fmt.format(a), "realised": fmt.format(b)})
+
+    add("Capex (% of revenue)", u.operating.capex_pct_revenue, r.operating.capex_pct_revenue)
+    add("D&A (% of revenue)", u.operating.da_pct_revenue, r.operating.da_pct_revenue)
+    add("Working capital (% of revenue)", u.operating.nwc_pct_revenue, r.operating.nwc_pct_revenue)
+    add("Cash sweep", u.cash_sweep_pct, r.cash_sweep_pct)
+    add("Minimum cash", u.minimum_cash, r.minimum_cash, "${:,.0f}m")
+    add("Hold", u.hold_years, r.hold_years, "{} years")
+    add("Exit multiple", u.exit_multiple, r.exit_multiple, "{:.1f}x")
+    return out
 
 
 def _break_note(case: CaseStudy, column: str) -> dict | None:
@@ -442,6 +482,7 @@ def case_detail(slug: str) -> dict:
         "thesis": case.thesis,
         "could_not_have_known": case.could_not_have_known,
         "model_caveats": case.model_caveats,
+        "column_deltas": _column_deltas(case),
         "provenance": [
             {
                 "label": f.label,

@@ -224,7 +224,8 @@ export interface RunResult {
   moic: number | null;
   irr: number | null;
   equity_cash_flows: number[];
-  bridge: Bridge;
+  /** null on a run that never reached an exit — there is no gain to decompose. */
+  bridge: Bridge | null;
   lifecycle: LifecycleEvent[];
   credit: CreditYear[];
   flags: Flag[];
