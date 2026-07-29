@@ -167,7 +167,11 @@ export interface SourcesUses {
 export interface Bridge {
   ebitda_growth: number;
   multiple_expansion: number;
+  /** Net of divestiture proceeds — paydown the business actually earned. */
   deleveraging: number;
+  /** Net sale proceeds applied to debt. Split out so asset sales are not
+   *  reported as operational deleveraging. */
+  divestitures: number;
   /** GROSS incremental debt raised in recaps — not the net dividend. The net
    *  would leave the identity short by exactly the financing fee. */
   recapitalisation: number;

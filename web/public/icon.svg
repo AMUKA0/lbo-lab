@@ -1,0 +1,16 @@
+<!--
+  The same mark as the header: three descending bars, which is what a debt
+  schedule looks like when it works — leverage paid down over a hold.
+
+  Drawn on its own dark tile rather than transparent, because a browser tab
+  puts the favicon on whatever chrome the user's theme happens to be, and a
+  pine-on-nothing mark disappears against a dark one. The tile also keeps the
+  three bars reading as a group at 16px, where a transparent version reads as
+  three unrelated dashes.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="LBO Lab">
+  <rect width="32" height="32" rx="7" fill="#0b100e" />
+  <rect x="5"    y="7"  width="6" height="18" rx="1.6" fill="#46b581" />
+  <rect x="13.2" y="12" width="6" height="13" rx="1.6" fill="#1f7a51" />
+  <rect x="21.4" y="17" width="6" height="8"  rx="1.6" fill="#cf9c4c" />
+</svg>

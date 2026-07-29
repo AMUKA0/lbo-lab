@@ -72,6 +72,9 @@ export function BridgeWaterfall({ bridge }: { bridge: Bridge | null }) {
     { name: "EBITDA growth", delta: bridge.ebitda_growth, anchor: false },
     { name: "Multiple", delta: bridge.multiple_expansion, anchor: false },
     { name: "Debt paydown", delta: bridge.deleveraging, anchor: false },
+    ...(bridge.divestitures !== 0
+      ? [{ name: "Divestitures", delta: bridge.divestitures, anchor: false }]
+      : []),
     // Only drawn when a recap happened, so the common case keeps a five-bar
     // waterfall rather than carrying a permanent zero-height step.
     ...(bridge.recapitalisation !== 0

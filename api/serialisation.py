@@ -110,6 +110,7 @@ class BridgeOut(BaseModel):
     ebitda_growth: float
     multiple_expansion: float
     deleveraging: float
+    divestitures: float
     recapitalisation: float
     follow_on_equity: float
     fee_drag: float
@@ -261,6 +262,7 @@ def bridge_out(b: ReturnsBridge) -> BridgeOut:
         ebitda_growth=b.ebitda_growth,
         multiple_expansion=b.multiple_expansion,
         deleveraging=b.deleveraging,
+        divestitures=b.divestitures,
         recapitalisation=b.recapitalisation,
         follow_on_equity=b.follow_on_equity,
         fee_drag=b.fee_drag,

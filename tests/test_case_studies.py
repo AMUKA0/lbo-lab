@@ -302,6 +302,7 @@ BRIDGE_ROWS = (
     "ebitda_growth",
     "multiple_expansion",
     "deleveraging",
+    "divestitures",
     "recapitalisation",
     "follow_on_equity",
     "fee_drag",

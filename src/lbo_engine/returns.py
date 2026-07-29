@@ -15,7 +15,8 @@ the fee drag, using the conventional attribution:
 
   EBITDA growth       = (exit EBITDA − entry EBITDA) × entry multiple
   Multiple expansion  = (exit multiple − entry multiple) × exit EBITDA
-  Deleveraging        = entry net debt − exit net debt
+  Deleveraging        = entry net debt − exit net debt, LESS divestiture proceeds
+  Divestitures        = net proceeds applied to debt
   Recapitalisation    = gross incremental debt raised in dividend recaps
   Follow-on equity    = −(rescue capital injected after close)
   Fee drag            = −(transaction + financing + recap + exit fees)
@@ -69,6 +70,12 @@ class ReturnsBridge:
     ebitda_growth: float
     multiple_expansion: float
     deleveraging: float
+    # Split out of deleveraging rather than added to it, so the identity is
+    # untouched and the presentation stops crediting the business with value it
+    # got by selling itself. On RJR, $5.1bn of disposals sat inside "debt
+    # paydown" and made a deal that shrank by a third look like one that
+    # deleveraged brilliantly.
+    divestitures: float
     recapitalisation: float
     # Negative by construction. Rescue capital reduces net debt and so inflates
     # the deleveraging line by exactly its own size; without this offset the
@@ -86,6 +93,7 @@ class ReturnsBridge:
             self.ebitda_growth
             + self.multiple_expansion
             + self.deleveraging
+            + self.divestitures
             + self.recapitalisation
             + self.follow_on_equity
             + self.fee_drag
@@ -106,10 +114,12 @@ def returns_bridge(r: LBOResult) -> ReturnsBridge:
     a = r.assumptions
     su = r.sources_uses
     recap_fees = sum(y.recap_fee for y in r.years)
+    divested = sum(y.divestiture_proceeds for y in r.years)
     return ReturnsBridge(
         ebitda_growth=(r.exit_ebitda - a.entry_ebitda) * a.entry_multiple,
         multiple_expansion=(a.exit_multiple - a.entry_multiple) * r.exit_ebitda,
-        deleveraging=r.entry_net_debt - r.exit_net_debt,
+        deleveraging=r.entry_net_debt - r.exit_net_debt - divested,
+        divestitures=divested,
         recapitalisation=sum(y.recap_raised for y in r.years),
         follow_on_equity=-r.total_injected,
         fee_drag=-(su.transaction_fees + su.financing_fees + recap_fees + r.exit_fees),

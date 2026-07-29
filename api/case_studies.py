@@ -766,14 +766,21 @@ TXU = CaseStudy(
                 sweepable=True,
             ),
             DebtTranche(
-                name="Senior unsecured toggle notes",
-                leverage_turns=2.16,  # ~$11.25bn
+                name="Senior unsecured cash-pay notes",
+                leverage_turns=1.78,  # ~$9.25bn of the $11.25bn bridge
                 cash_rate=0.1025,
-                # These were toggle notes in fact as well as in name: EFH could
-                # elect to PIK the coupon rather than pay it, at a step-up. An
-                # earlier version of this case modelled them as pure cash-pay,
-                # which removed the single most important option the structure
-                # actually had.
+                sweepable=False,
+            ),
+            DebtTranche(
+                # Only part of the bridge termed out as toggle paper. Modelling
+                # the whole $11.25bn as toggle gave EFH roughly five times the
+                # PIK optionality it had, on the one case that exercises the
+                # mechanic. The split is estimated -- the bridge is reported as
+                # $6.75bn TCEH plus $4.5bn EFH "cash pay and toggle" without a
+                # public breakdown -- so treat the boundary as soft.
+                name="Senior toggle notes (10.50%/11.25%)",
+                leverage_turns=0.38,  # ~$2.0bn
+                cash_rate=0.1050,
                 pik_toggle=True,
                 pik_toggle_premium=0.0075,
                 sweepable=False,
@@ -810,8 +817,11 @@ TXU = CaseStudy(
         tranches=[
             DebtTranche(name="Senior secured term loan B", leverage_turns=4.71, cash_rate=0.0800,
                         mandatory_amort_pct=0.01, sweepable=True),
-            DebtTranche(name="Senior unsecured toggle notes", leverage_turns=2.16, cash_rate=0.1025,
-                        pik_toggle=True, pik_toggle_premium=0.0075, sweepable=False),
+            DebtTranche(name="Senior unsecured cash-pay notes", leverage_turns=1.78,
+                        cash_rate=0.1025, sweepable=False),
+            DebtTranche(name="Senior toggle notes (10.50%/11.25%)", leverage_turns=0.38,
+                        cash_rate=0.1050, pik_toggle=True, pik_toggle_premium=0.0075,
+                        sweepable=False),
         ],
         revolver=RevolverAssumptions(commitment=2700.0, cash_rate=0.0800, undrawn_fee=0.005),
         transaction_fee_pct_ev=0.010,
@@ -1201,8 +1211,13 @@ RJR = CaseStudy(
         "further refinancings after 1993. The realised column therefore has less "
         "liquidity in the back half of the hold than RJR actually had, which is part of "
         "why it breaks in year five where the real company limped on to a 1995 exit.",
-        "1989 pre-TCJA tax law. The 80% NOL limitation is switched off for this case, "
-        "and the interest deduction is unlimited — there was no §163(j) cap.",
+        "1989 tax law, and 'pre-TCJA' is not the same as 'unlimited'. There was no "
+        "§163(j) cap, but §279 already restricted interest deductibility on acquisition "
+        "indebtedness, and OBRA '89 introduced the AHYDO rules aimed squarely at paper "
+        "like this — deferring and partly disallowing the deduction on high-yield "
+        "discount obligations. The engine deducts the full $1.3–2.2bn a year of PIK "
+        "accretion. On a structure whose whole tax shield is that strip, the real "
+        "after-tax cost was higher than modelled.",
     ],
     outcome=Outcome(
         exit_route="Divestitures, a 1991 IPO, and a final exit via the 1995 Borden share exchange",

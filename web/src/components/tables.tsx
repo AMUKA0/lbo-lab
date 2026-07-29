@@ -433,7 +433,10 @@ export function BridgeTable({ run }: { run: RunResult }) {
   const rows: [string, number][] = [
     ["EBITDA growth × entry multiple", b.ebitda_growth],
     ["Multiple change × exit EBITDA", b.multiple_expansion],
-    ["Net debt paydown", b.deleveraging],
+    ["Net debt paydown (from operations)", b.deleveraging],
+    ...(b.divestitures !== 0
+      ? ([["Divestiture proceeds to debt", b.divestitures]] as [string, number][])
+      : []),
     ...(b.recapitalisation !== 0
       ? ([["Recap debt raised (gross)", b.recapitalisation]] as [string, number][])
       : []),
