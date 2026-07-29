@@ -1050,12 +1050,6 @@ RJR = CaseStudy(
         # whole reason the structure was thought to work. Without them the model
         # reports a deal that cannot service itself — which is true of the
         # structure alone and false of the plan.
-        injections=[
-            # KKR injected about $1.7bn of fresh equity in 1990 when the reset
-            # provisions on the PIK paper threatened a default. It buys year two;
-            # it does nothing for Marlboro Friday three years later.
-            EquityInjection(year=2, amount=1700.0, label="1990 recapitalisation"),
-        ],
         divestitures=[
             # Gains estimated at ~20% of consideration, not the half a
             # "long-held conglomerate asset" instinct suggests. R.J. Reynolds
@@ -1107,6 +1101,12 @@ RJR = CaseStudy(
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
+        injections=[
+            # KKR injected about $1.7bn of fresh equity in 1990 when the reset
+            # provisions on the PIK paper threatened a default. It buys year two;
+            # it does nothing for Marlboro Friday three years later.
+            EquityInjection(year=2, amount=1700.0, label="1990 recapitalisation"),
+        ],
         divestitures=[
             # Gains estimated at ~20% of consideration, not the half a
             # "long-held conglomerate asset" instinct suggests. R.J. Reynolds

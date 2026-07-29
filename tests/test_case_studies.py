@@ -258,3 +258,23 @@ def test_reported_moic_and_irr_are_mutually_consistent(case):
         f"{case.slug}: {o.realised_irr:.1%} sits more than 10pts above the "
         f"{floor:.1%} compounded floor; state the distribution profile or lower it"
     )
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+def test_underwriting_never_assumes_it_will_need_rescuing(case):
+    """Rescue capital in an underwriting column is hindsight by definition.
+
+    Nobody signs a deal on the basis that the sponsor will have to inject
+    equity in year two — if you knew that, you would not sign it. Follow-on
+    capital belongs in the realised column, describing what actually had to
+    happen, and nowhere near the case built from pre-close information.
+
+    This exists because it happened: RJR's 1990 recapitalisation was written
+    into the underwriting column by mistake, and it moved that column from
+    0.81x to 1.02x — flattering it into near-exact agreement with the reported
+    outcome, which is precisely how a retrospective case study fools its author.
+    """
+    assert not case.underwriting.injections, (
+        f"{case.slug} underwrites {len(case.underwriting.injections)} rescue "
+        "injection(s) — that is hindsight, not a plan"
+    )
