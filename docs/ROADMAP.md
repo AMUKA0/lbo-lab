@@ -22,6 +22,11 @@ happened, against the reported outcome.
 **Excel, phases 1 and 2.** A live formula-driven workbook, tested against the
 engine by independent recalculation; and the round trip back in via named ranges.
 
+**§163(j).** The interest deduction capped at 30% of adjusted taxable income,
+ahead of the NOL, with the disallowed amount carrying forward indefinitely.
+In the engine and in the workbook, where the recalculation test proves the two
+agree. Off for every case study, all of which predate the 2017 Act.
+
 ---
 
 ## Phase 3 — not started
@@ -71,9 +76,6 @@ not feature-complete. Three things separate the current state from that:
 - The README's deployment section explains why the Dockerfile imports the app at
   build time — a missing dependency once failed the deploy rather than the
   build, and the fix is only useful if the next person knows why it is there.
-- §163(j) implemented, or removed from the "genuine gaps" list and stated as a
-  deliberate exclusion with reasoning. Currently it sits in an uncomfortable
-  middle: named as missing, which invites the question without answering it.
 
 ---
 
@@ -82,10 +84,6 @@ not feature-complete. Three things separate the current state from that:
 Two independent reviews found real errors; most were fixed (see git history).
 These were not:
 
-- **§163(j) is absent.** The 30%-of-adjusted-taxable-income interest limitation
-  binds harder on a levered deal than the §172(a) NOL rule that *is* implemented.
-  The case studies all pre-date the 2017 Act so it does not affect them, but the
-  simulator's default is a modern US LBO paying tax relief it would not get.
 - **No covenant test and no maturity wall.** Failure is tested on liquidity only,
   which is the rarer of the real modes. Most 2008–09 sponsor distress was
   covenant-driven; TXU's actual death was a 2014 maturity wall.

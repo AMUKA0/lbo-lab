@@ -9,6 +9,7 @@ from lbo_engine.assumptions import (
     Divestiture,
     EquityInjection,
     DividendRecap,
+    InterestLimitation,
     OperatingAssumptions,
     RevolverAssumptions,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "Divestiture",
     "EquityInjection",
     "DividendRecap",
+    "InterestLimitation",
     "OperatingAssumptions",
     "RevolverAssumptions",
     "SourcesAndUses",

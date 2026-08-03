@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from lbo_engine.assumptions import (
     Assumptions,
     DebtTranche,
+    InterestLimitation,
     OperatingAssumptions,
     RevolverAssumptions,
 )
@@ -169,6 +170,17 @@ def read_workbook(source) -> Assumptions:
         )
     }
 
+    # §163(j). Optional, so that a workbook exported before the cap existed
+    # still reads; absent, the model default applies.
+    cap_on = number("Interest_Limit_On", required=False)
+    cap_pct = number("Interest_Limit_Pct", required=False)
+    cap_da = number("Interest_Limit_DA", required=False)
+    limitation = InterestLimitation() if cap_on is None else InterestLimitation(
+        enabled=bool(cap_on),
+        pct_of_ati=InterestLimitation().pct_of_ati if cap_pct is None else cap_pct,
+        ati_basis="ebitda" if cap_da else "ebit",
+    )
+
     if problems:
         raise WorkbookError(problems)
 
@@ -203,6 +215,7 @@ def read_workbook(source) -> Assumptions:
             financing_fee_tenor_years=int(fields["Fee_Tenor"]),
             exit_fee_pct_ev=fields["Exit_Fee_Pct"],
             nol_limit_pct=fields["NOL_Limit"],
+            interest_limitation=limitation,
             minimum_cash=fields["Minimum_Cash"],
             cash_sweep_pct=fields["Sweep_Pct"],
             hold_years=int(hold),

@@ -19,7 +19,7 @@ import tempfile
 
 import pytest
 
-from lbo_engine import Assumptions, run_lbo
+from lbo_engine import Assumptions, InterestLimitation, run_lbo
 from lbo_engine.workbook import build_workbook
 
 openpyxl = pytest.importorskip("openpyxl")
@@ -115,6 +115,55 @@ class TestItIsTheSameModel:
                 assert v == pytest.approx(0.0, abs=0.01), f"{label} = {v}"
             else:
                 assert v >= -0.01, f"{label} = {v}"
+
+
+class TestTheInterestLimitation:
+    """§163(j) in the workbook. The line above checks tax, which would agree
+    even if the cap silently did nothing — so these pin the block itself, and
+    that it binds on the fixture rather than sitting inert."""
+
+    def test_the_cap_binds_on_the_fixture(self, rich_deal):
+        first = run_lbo(_acyclic(rich_deal)).years[0]
+        assert first.interest_cf_closing > 0, (
+            "the fixture must actually be capped, or the recalculation below "
+            "proves nothing about §163(j)"
+        )
+
+    def test_the_carryforward_agrees_with_the_engine(self, rich_deal):
+        deal = _acyclic(rich_deal)
+        value, row, _ = _recalculate(_write(deal, "capped.xlsx"))
+        result = run_lbo(deal)
+
+        for i, year in enumerate(result.years):
+            c = chr(ord("B") + i)
+            for label, expected in (
+                ("Business interest (§163(j))", year.business_interest),
+                ("Deductible capacity", year.interest_capacity),
+                ("Interest deducted", year.interest_deducted),
+                ("Disallowed interest carried forward", year.interest_cf_closing),
+                ("Taxable income", year.taxable_income),
+            ):
+                assert value("Model", f"{c}{row('Model', label)}") == pytest.approx(
+                    expected, abs=1e-4), f"year {year.year} {label}"
+
+    def test_switching_the_cap_off_in_the_sheet_restores_the_deduction(self, rich_deal):
+        """The switch is the point of exporting it as an input: an analyst asked
+        to run the deal at pre-2018 tax changes one cell, not a formula."""
+        path = _write(_acyclic(rich_deal), "uncapped.xlsx")
+        wb = openpyxl.load_workbook(path)
+        sheet, ref = next(iter(wb.defined_names["Interest_Limit_On"].destinations))
+        wb[sheet][ref.replace("$", "")].value = 0
+        wb.save(path)
+
+        value, row, _ = _recalculate(path)
+        off = run_lbo(_acyclic(rich_deal).model_copy(
+            update={"interest_limitation": InterestLimitation(enabled=False)}))
+        for i, year in enumerate(off.years):
+            c = chr(ord("B") + i)
+            assert value("Model", f"{c}{row('Model', 'Interest deducted')}") == pytest.approx(
+                year.business_interest, abs=1e-4), f"year {year.year}"
+            assert -value("Model", f"{c}{row('Model', 'Tax')}") == pytest.approx(
+                year.taxes, abs=1e-4), f"year {year.year} tax"
 
 
 class TestTheCircularity:

@@ -15,7 +15,7 @@ const FEATURES = [
   {
     no: "01",
     title: "The engine, done properly",
-    body: "Sources & uses with equity as the plug, a multi-tranche schedule with mandatory amortisation and a senior-first cash sweep, PIK accretion, NOL carryforwards under a configurable §172(a) shelter, and a revolver for shortfalls — with the interest ↔ balance circularity resolved by an iterative solve, the way Excel's iterative mode does it.",
+    body: "Sources & uses with equity as the plug, a multi-tranche schedule with mandatory amortisation and a senior-first cash sweep, PIK accretion, the §163(j) interest cap ahead of a configurable §172(a) NOL shelter, and a revolver for shortfalls — with the interest ↔ balance circularity resolved by an iterative solve, the way Excel's iterative mode does it.",
   },
   {
     no: "02",
@@ -124,9 +124,11 @@ export function Landing() {
               senior-first, sweepable tranches only.
             </li>
             <li>
-              <strong>Taxes</strong> — on EBT after all deductible interest and fee
-              amortisation; losses carry forward as NOLs sheltering up to 80% of later income
-              (post-TCJA §172(a)).
+              <strong>Taxes</strong> — §163(j) caps the interest deduction at 30% of
+              adjusted taxable income, so a levered structure can post a book loss and
+              still owe cash tax; what it denies carries forward indefinitely. Losses
+              carry forward as NOLs sheltering up to 80% of later taxable income
+              (post-TCJA §172(a)). Both switch off for a pre-2018 deal.
             </li>
           </ul>
           <ul>
@@ -143,9 +145,9 @@ export function Landing() {
               value bridge reconciles exactly, and credit stats cover the lender's view.
             </li>
             <li>
-              <strong>Known gaps</strong> — no §163(j) interest limitation and no §382
-              cap; failure is tested on liquidity only, with no covenant or maturity
-              wall; no management rollover or add-ons; annual periodicity and fixed
+              <strong>Known gaps</strong> — no §382 cap on a target's own
+              carryforwards; failure is tested on liquidity only, with no covenant or
+              maturity wall; no management rollover or add-ons; annual periodicity and fixed
               rates. Each is listed in the README with what it would change, because
               pretending they don't exist is how models lie.
             </li>

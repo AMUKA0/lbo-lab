@@ -8,9 +8,12 @@ For each projection year, in this order:
      iterative solve within the year (seed with interest on opening balances,
      recompute until the total interest charge stops moving), which is exactly
      what Excel's iterative-calculation mode does.
-  3. Tax on EBT, floored at zero. Losses accumulate as NOL carryforwards and
-     offset up to `nol_limit_pct` of later positive pre-tax income (the 80%
-     post-TCJA US limitation by default).
+  3. Tax. Two limitations apply in order, because the order is the law's:
+     §163(j) first caps the interest deduction at a share of adjusted taxable
+     income, then §172(a) lets carryforwards shelter up to `nol_limit_pct` of
+     what is left. Interest denied under the first is not lost — it carries
+     forward indefinitely and competes with next year's interest for the same
+     capacity. Tax is floored at zero and a loss carries forward as an NOL.
   4. Cash available for debt service:
        net income + D&A + financing-fee amortisation + PIK accrual (non-cash)
        − capex − ΔNWC + opening cash − minimum cash.
@@ -80,6 +83,18 @@ class YearRow:
     pik_accrual_total: float
     revolver_undrawn_fee: float
     ebt: float
+    # §163(j). `business_interest` is what the section reaches — cash coupon,
+    # PIK accrual and fee amortisation, but not the undrawn commitment fee.
+    # `deducted` is what tax relief was actually given on; the gap is the cost
+    # of the cap, and it shows up as tax paid on money that went to lenders.
+    business_interest: float
+    interest_capacity: float
+    interest_deducted: float
+    interest_cf_opening: float
+    interest_cf_closing: float
+    # What tax is charged on, before NOLs. Differs from `ebt` by exactly the
+    # interest the cap disallowed.
+    taxable_income: float
     nol_opening: float
     nol_used: float
     nol_closing: float
@@ -237,6 +252,8 @@ def run_lbo(a: Assumptions) -> LBOResult:
     revolver_opening = 0.0
     opening_cash = su.cash_to_balance_sheet
     nol_opening = 0.0
+    # Interest §163(j) denied in earlier years, treated as paid again this one.
+    interest_cf_opening = 0.0
     prev_revenue = a.operating.entry_revenue
     # Revenue that left with a business sold at the end of the previous year.
     # The resulting fall in revenue is inorganic, so it must not drive a working
@@ -286,7 +303,7 @@ def run_lbo(a: Assumptions) -> LBOResult:
         row = _solve_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            nol_opening,
+            nol_opening, interest_cf_opening,
         )
         row.equity_injected = injected
         row.debt_retired = retired
@@ -314,6 +331,7 @@ def run_lbo(a: Assumptions) -> LBOResult:
         revolver_opening = row.revolver_closing
         opening_cash = row.closing_cash
         nol_opening = row.nol_closing
+        interest_cf_opening = row.interest_cf_closing
         prev_revenue = revenue
 
     exit_ebitda = years[-1].ebitda
@@ -424,6 +442,7 @@ def _solve_year(
     revolver_opening: float,
     opening_cash: float,
     nol_opening: float,
+    interest_cf_opening: float,
 ) -> YearRow:
     """Resolve one year, electing the PIK toggle only if the year cannot be paid.
 
@@ -446,7 +465,7 @@ def _solve_year(
             row = _solve_year_with(
                 a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
                 tranche_original, tranche_opening, revolver_opening, opening_cash,
-                nol_opening, elected,
+                nol_opening, interest_cf_opening, elected,
             )
         except ValueError as exc:
             failure = exc
@@ -475,6 +494,7 @@ def _solve_year_with(
     revolver_opening: float,
     opening_cash: float,
     nol_opening: float,
+    interest_cf_opening: float,
     elected: frozenset[str],
 ) -> YearRow:
     """Iteratively resolve the interest ↔ debt-balance circularity for one year,
@@ -491,7 +511,8 @@ def _solve_year_with(
         row = _build_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            nol_opening, cash_interest, revolver_interest, elected,
+            nol_opening, interest_cf_opening, cash_interest, revolver_interest,
+            elected,
         )
         row.interest_iterations = 1
         return row
@@ -502,7 +523,8 @@ def _solve_year_with(
         row = _build_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            nol_opening, cash_interest, revolver_interest, elected,
+            nol_opening, interest_cf_opening, cash_interest, revolver_interest,
+            elected,
         )
         # Recompute interest on average balances given the resulting closings.
         cash_interest = {
@@ -540,6 +562,7 @@ def _build_year(
     revolver_opening: float,
     opening_cash: float,
     nol_opening: float,
+    interest_cf_opening: float,
     cash_interest: dict[str, float],
     revolver_interest: float,
     elected: frozenset[str] = frozenset(),
@@ -555,17 +578,45 @@ def _build_year(
     cash_interest_total = sum(cash_interest.values()) + revolver_interest
     pik_total = sum(pik_accrual.values())
 
-    # Income statement. Financing-fee amortisation and PIK are tax-deductible.
+    # Income statement. Financing-fee amortisation and PIK are expenses of the
+    # period whether or not tax allows them this year.
     ebt = ebit - cash_interest_total - pik_total - fee_amort - undrawn_fee
-    if ebt > 0:
-        # NOLs shelter up to nol_limit_pct of positive pre-tax income (§172(a)).
-        nol_used = min(nol_opening, a.nol_limit_pct * ebt)
-        taxes = (ebt - nol_used) * a.operating.tax_rate
+
+    # --- §163(j): cap the interest DEDUCTION, not the interest ---------------
+    # Fee amortisation is inside the cap because it is OID, which is interest.
+    # The undrawn commitment fee is outside it: the 2020 final regulations left
+    # commitment fees out of the definition, so they are deducted in full.
+    business_interest = cash_interest_total + pik_total + fee_amort
+    subject = business_interest + interest_cf_opening
+    lim = a.interest_limitation
+    if lim.enabled:
+        # ATI is struck before interest and before any NOL. The EBITDA basis
+        # applied to years beginning before 2022; EBIT is current law.
+        ati = ebit - undrawn_fee + (da if lim.ati_basis == "ebitda" else 0.0)
+        interest_capacity = lim.pct_of_ati * max(ati, 0.0)
+        interest_deducted = min(subject, interest_capacity)
+    else:
+        # No cap: everything is deducted, and the reported capacity is the
+        # deduction itself rather than an infinity nothing can display.
+        interest_deducted = subject
+        interest_capacity = subject
+    # Denied interest carries forward indefinitely — no expiry, unlike an NOL.
+    interest_cf_closing = subject - interest_deducted
+
+    # Tax base: book EBT, plus back the interest tax would not allow.
+    taxable_income = ebt + (business_interest - interest_deducted)
+
+    if taxable_income > 0:
+        # NOLs shelter up to nol_limit_pct of positive taxable income (§172(a)).
+        nol_used = min(nol_opening, a.nol_limit_pct * taxable_income)
+        taxes = (taxable_income - nol_used) * a.operating.tax_rate
         nol_closing = nol_opening - nol_used
     else:
         nol_used = 0.0
         taxes = 0.0
-        nol_closing = nol_opening - ebt  # the loss carries forward
+        nol_closing = nol_opening - taxable_income  # the loss carries forward
+    # The disallowed interest was still paid, so it still reduces net income —
+    # it is the tax charge above it that the cap raises.
     net_income = ebt - taxes
 
     # Cash flow: add back non-cash charges (D&A, fee amortisation, PIK).
@@ -641,6 +692,12 @@ def _build_year(
         pik_accrual_total=pik_total,
         revolver_undrawn_fee=undrawn_fee,
         ebt=ebt,
+        business_interest=business_interest,
+        interest_capacity=interest_capacity,
+        interest_deducted=interest_deducted,
+        interest_cf_opening=interest_cf_opening,
+        interest_cf_closing=interest_cf_closing,
+        taxable_income=taxable_income,
         nol_opening=nol_opening,
         nol_used=nol_used,
         nol_closing=nol_closing,

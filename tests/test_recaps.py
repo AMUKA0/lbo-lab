@@ -187,6 +187,12 @@ class TestPikToggle:
         payload = deal.model_dump()
         payload["operating"]["ebitda_margin"] = [0.192, 0.12, 0.115, 0.12, 0.13]
         payload["revolver"]["commitment"] = 20.0
+        # §163(j) off. It is not neutral here — a PIK election ADDS business
+        # interest, which mostly cannot be deducted in a trough year, so the cap
+        # narrows the band this fixture is calibrated to. That interaction is
+        # worth testing and is, in TestInterestLimitation; leaving it on here
+        # would just mean re-tuning margins whenever the tax code changes.
+        payload["interest_limitation"] = {"enabled": False}
         return Assumptions.model_validate(payload)
 
     def test_the_toggle_buys_room_but_not_immunity(self, rich_deal):
@@ -286,6 +292,9 @@ class TestDivestitures:
         payload = rich_deal.model_dump()
         payload["operating"]["ebitda_margin"] = [0.192, 0.115, 0.11, 0.115, 0.125]
         payload["revolver"]["commitment"] = 15.0
+        # Calibrated to break by a small margin, so it is held at pre-2018 tax
+        # to keep the sale — not the interest cap — as the thing being tested.
+        payload["interest_limitation"] = {"enabled": False}
         stressed = Assumptions.model_validate(payload)
         with pytest.raises(ValueError):
             run_lbo(stressed)

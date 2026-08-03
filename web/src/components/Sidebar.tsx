@@ -485,8 +485,44 @@ export function Sidebar({
           step={0.05}
           format={(v) => fmtPct(v, 0)}
           onChange={(v) => edit((n) => (n.nol_limit_pct = v))}
-          note="Losses carry forward and shelter up to this share of a later year's pre-tax income. 80% is the post-TCJA US rule (§172(a)); set to 0% to disable carryforwards entirely."
+          note="Losses carry forward and shelter up to this share of a later year's taxable income. 80% is the post-TCJA US rule (§172(a)); set to 0% to disable carryforwards entirely."
         />
+        <ToggleField
+          label="§163(j) interest limitation"
+          checked={a.interest_limitation.enabled}
+          onChange={(v) => edit((n) => (n.interest_limitation.enabled = v))}
+          note={
+            a.interest_limitation.enabled
+              ? "Interest is deductible only up to a share of adjusted taxable income. The excess is still paid — it just stops sheltering income — and carries forward indefinitely."
+              : "No cap: every dollar of interest is deducted. Correct for a pre-2018 deal or a non-US borrower, and the reason all four case studies run this way."
+          }
+        />
+        {a.interest_limitation.enabled && (
+          <>
+            <SliderField
+              label="Deductible share of ATI"
+              value={a.interest_limitation.pct_of_ati}
+              min={0.05}
+              max={0.6}
+              step={0.05}
+              format={(v) => fmtPct(v, 0)}
+              onChange={(v) => edit((n) => (n.interest_limitation.pct_of_ati = v))}
+              note="30% under current US law. The CARES Act lifted it to 50% for 2019–20."
+            />
+            <ToggleField
+              label="Add D&A back to ATI"
+              checked={a.interest_limitation.ati_basis === "ebitda"}
+              onChange={(v) =>
+                edit((n) => (n.interest_limitation.ati_basis = v ? "ebitda" : "ebit"))
+              }
+              note={
+                a.interest_limitation.ati_basis === "ebitda"
+                  ? "The EBITDA-like basis, which applied to years beginning before 2022 — a materially wider cap for a capital-intensive borrower."
+                  : "Current law: ATI is EBIT-like, with no add-back. The 2022 change cut the cap by roughly a third on a depreciation-heavy business."
+              }
+            />
+          </>
+        )}
       </Group>
 
       {/* -------------------------------------------------------------- exit */}

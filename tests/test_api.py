@@ -182,6 +182,20 @@ class TestWorkbookEndpoints:
         assert response.status_code == 200
         assert response.json()["assumptions"] == deal
 
+    def test_the_interest_cap_survives_the_round_trip(self, deal):
+        """Non-default values on every switch, because equality on defaults
+        would pass even if the cells were never written or never read."""
+        deal["interest_limitation"] = {
+            "enabled": True, "pct_of_ati": 0.50, "ati_basis": "ebitda",
+        }
+        response = client.post(
+            "/api/import.xlsx",
+            files={"file": ("model.xlsx", self._workbook(deal), _XLSX)},
+        )
+        assert response.status_code == 200
+        assert response.json()["assumptions"]["interest_limitation"] == (
+            deal["interest_limitation"])
+
     def test_the_export_is_named_and_typed_for_excel(self, deal):
         response = client.post("/api/model.xlsx", json={"assumptions": deal})
         assert response.headers["content-type"].startswith(

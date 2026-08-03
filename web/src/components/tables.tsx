@@ -173,6 +173,13 @@ export function ScheduleTable({ run }: { run: RunResult }) {
   ];
 
   const tax: Row[] = [
+    // §163(j) before the NOL, because that is the order of the statute: the cap
+    // fixes the tax base, then carryforwards shelter a share of what is left.
+    { label: "Business interest", get: (y) => y.business_interest, indent: true },
+    { label: "Deductible capacity (§163(j))", get: (y) => y.interest_capacity, indent: true },
+    { label: "Interest deducted", get: (y) => y.interest_deducted, indent: true },
+    { label: "Disallowed, carried forward", get: (y) => y.interest_cf_closing, indent: true },
+    { label: "Taxable income", get: (y) => y.taxable_income },
     { label: "NOL opening", get: (y) => y.nol_opening, indent: true },
     { label: "NOL used", get: (y) => -y.nol_used, indent: true },
     { label: "NOL closing", get: (y) => y.nol_closing, indent: true },
@@ -263,7 +270,7 @@ export function ScheduleTable({ run }: { run: RunResult }) {
         <tbody>
           <Section title="Operating build" rows={operating} years={years} />
           <Section title="Financing charges" rows={financing} years={years} />
-          <Section title="Tax, with NOL carryforward" rows={tax} years={years} />
+          <Section title="Tax — §163(j), then NOL carryforward" rows={tax} years={years} />
           <Section title="Cash flow" rows={cashflow} years={years} />
           <Section title="Debt waterfall" rows={waterfall} years={years} />
           <Section title="Closing balances" rows={balances} years={years} />

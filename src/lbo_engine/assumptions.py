@@ -11,6 +11,8 @@ Conventions follow standard sponsor-model practice:
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -225,6 +227,49 @@ class EquityInjection(BaseModel):
         return self
 
 
+class InterestLimitation(BaseModel):
+    """§163(j): the cap on how much business interest a company may deduct.
+
+    The provision that binds hardest on a modern US LBO, and the reason the
+    2017 Act changed sponsor structuring more than the rate cut did. A company
+    may deduct business interest only up to 30% of adjusted taxable income.
+    Above that the interest is still *paid* — it simply stops sheltering
+    income, so cash tax is charged on money that went to lenders.
+
+    Three details matter, and each one is a question worth being able to answer:
+
+    * **The basis tightened in 2022.** For years beginning before 2022, ATI was
+      an EBITDA-like measure; from 2022 it is EBIT-like, with no add-back for
+      depreciation and amortisation. For a capital-intensive borrower that
+      change alone cut the cap by a third or more. `ati_basis` carries it.
+    * **Disallowed interest never expires.** Unlike an NOL it carries forward
+      indefinitely, and is treated as business interest paid in the next year —
+      so it competes with that year's own interest for the same capacity.
+    * **Commitment fees are not interest.** The 2020 final regulations left
+      undrawn revolver fees outside the definition, so they are deducted in
+      full and excluded from the cap. Financing-fee amortisation *is* inside
+      it: it is OID, which is interest.
+
+    Disabled for any deal predating the 2017 Act. Before then §163(j) was an
+    earnings-stripping rule aimed at related-party interest, which did not
+    reach a third-party LBO — so applying today's cap to a 1988 or 2007 deal
+    would be a straightforward anachronism.
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Apply the cap. False for pre-2018 deals, or non-US borrowers.",
+    )
+    pct_of_ati: float = Field(
+        default=0.30, ge=0, le=1,
+        description="Share of adjusted taxable income deductible as interest (30% under current law)",
+    )
+    ati_basis: Literal["ebit", "ebitda"] = Field(
+        default="ebit",
+        description="EBIT-like ATI (current law) or EBITDA-like (years beginning before 2022)",
+    )
+
+
 class OperatingAssumptions(BaseModel):
     """The operating build. Scalars apply to every projection year."""
 
@@ -286,6 +331,11 @@ class Assumptions(BaseModel):
                     "1.0 is unlimited (pre-TCJA); 0.8 is post-TCJA §172(a); 0.0 disables "
                     "the deduction entirely.",
     )
+    # The §163(j) cap on interest deductibility. Enabled by default, because the
+    # default deal here is a modern US LBO and a modern US LBO does not get full
+    # relief on a six-turn structure. Every case study in the library predates
+    # the 2017 Act and switches it off.
+    interest_limitation: InterestLimitation = InterestLimitation()
     # The industry "circularity breaker". True = interest on the average of
     # opening and closing balances (correct, circular, solved iteratively).
     # False = interest on the opening balance only (approximate but acyclic) —

@@ -4,7 +4,7 @@
 
 import pytest
 
-from lbo_engine import run_lbo
+from lbo_engine import InterestLimitation, run_lbo
 from lbo_engine.returns import returns_bridge, sponsor_irr
 
 
@@ -14,6 +14,12 @@ class TestNOLCarryforward:
         # Year 2 is a heavy loss; years 3+ recover and should be sheltered.
         d.operating.ebitda_margin = [0.192, 0.04, 0.198, 0.200, 0.202]
         d.revolver.commitment = 300.0
+        # These tests are about §172(a) alone. With §163(j) also on, a bad year
+        # produces taxable income rather than a loss — because the interest is
+        # disallowed rather than deducted — and there is no carryforward left to
+        # test. That interaction is real and is tested in TestInterestLimitation;
+        # here it would only obscure the mechanic under examination.
+        d.interest_limitation = InterestLimitation(enabled=False)
         return d
 
     def test_loss_year_creates_carryforward(self, rich_deal):
@@ -123,6 +129,9 @@ class TestNolDirection:
         payload = rich_deal.model_dump()
         # A deep first year, then recovery: the only shape where NOLs bite.
         payload["operating"]["ebitda_margin"] = [0.10, 0.22, 0.22, 0.22, 0.22]
+        # §163(j) off, for the reason given in TestNOLCarryforward: it would
+        # deny the loss that these tests need to exist.
+        payload["interest_limitation"] = {"enabled": False}
         return payload
 
     def test_full_carryforward_shelters_more_than_the_tcja_limit(self, rich_deal):

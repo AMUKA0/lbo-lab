@@ -9,7 +9,7 @@ Every balance below comes from iterating that identity with E=100, r=5%.
 
 import pytest
 
-from lbo_engine import run_lbo
+from lbo_engine import InterestLimitation, run_lbo
 from lbo_engine.returns import returns_bridge, sponsor_irr
 
 # Golden path for the simple deal (opening debt 400):
@@ -117,9 +117,14 @@ class TestStressBehaviour:
     def test_taxes_floored_at_zero_in_loss_years(self, rich_deal):
         stressed = rich_deal.model_copy(deep=True)
         stressed.operating.ebitda_margin = [0.192, 0.05, 0.198, 0.200, 0.202]
+        # A tax loss, not merely a book loss: with §163(j) on, a year can be
+        # loss-making and still owe tax, which is a different property and is
+        # tested separately.
+        stressed.interest_limitation = InterestLimitation(enabled=False)
         r = run_lbo(stressed)
         loss_year = r.years[1]
         assert loss_year.ebt < 0
+        assert loss_year.taxable_income < 0
         assert loss_year.taxes == 0.0
 
     def test_no_sweep_bullet_builds_cash_instead(self, simple_deal):

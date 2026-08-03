@@ -58,6 +58,12 @@ export interface EquityInjection {
   label: string;
 }
 
+export interface InterestLimitation {
+  enabled: boolean;
+  pct_of_ati: number;
+  ati_basis: "ebit" | "ebitda";
+}
+
 export interface Assumptions {
   entry_ebitda: number;
   entry_multiple: number;
@@ -71,6 +77,7 @@ export interface Assumptions {
   financing_fee_tenor_years: number;
   exit_fee_pct_ev: number;
   nol_limit_pct: number;
+  interest_limitation: InterestLimitation;
   interest_on_average_balance: boolean;
   minimum_cash: number;
   cash_sweep_pct: number;
@@ -123,6 +130,11 @@ export interface YearRow {
   pik_accrual_total: number;
   revolver_undrawn_fee: number;
   ebt: number;
+  business_interest: number;
+  interest_capacity: number;
+  interest_deducted: number;
+  interest_cf_closing: number;
+  taxable_income: number;
   nol_opening: number;
   nol_used: number;
   nol_closing: number;

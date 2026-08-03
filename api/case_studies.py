@@ -43,9 +43,26 @@ from lbo_engine import (
     Divestiture,
     EquityInjection,
     DividendRecap,
+    InterestLimitation,
     OperatingAssumptions,
     RevolverAssumptions,
 )
+
+
+def _pre_tcja() -> InterestLimitation:
+    """§163(j) off, for every column in this library.
+
+    All four deals closed before the 2017 Act. Pre-2018 §163(j) was an
+    earnings-stripping rule aimed at related-party interest and did not reach a
+    third-party LBO, so applying the 30%-of-ATI cap here would be an anachronism
+    — it would charge these structures tax on relief they in fact received.
+    §279 is the provision that did bite on acquisition debt, and on RJR the
+    AHYDO rules; both are noted in the caveats rather than modelled.
+
+    A fresh instance per deal, so nothing can mutate one column's tax law by
+    editing another's.
+    """
+    return InterestLimitation(enabled=False)
 
 Basis = Literal["reported", "derived", "estimated"]
 
@@ -288,7 +305,8 @@ HILTON = CaseStudy(
         financing_fee_pct_debt=0.020,
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
-        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year  # pre-TCJA: no 80% limitation, full carryforward
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -322,6 +340,7 @@ HILTON = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
         # April 2010, modelled as reported: roughly $2bn of Hilton's own debt
@@ -551,6 +570,7 @@ HCA = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=400.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -583,6 +603,7 @@ HCA = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=400.0,
         # HCA did not sweep. Free cash flow went to capex and, from 2010, to
         # dividend recapitalisations — reported debt was still $28.2bn in 2010
@@ -792,6 +813,7 @@ TXU = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=1000.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -829,6 +851,7 @@ TXU = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=1000.0,
         cash_sweep_pct=0.75,
         hold_years=7,
@@ -1069,6 +1092,7 @@ RJR = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
         # The divestitures were agreed at or shortly after close and were the
@@ -1126,6 +1150,7 @@ RJR = CaseStudy(
         financing_fee_tenor_years=7,
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
         injections=[

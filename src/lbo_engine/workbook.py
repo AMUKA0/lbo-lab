@@ -163,7 +163,16 @@ def build_workbook(a: Assumptions):
     put(r, "Capex (% of revenue)", a.operating.capex_pct_revenue, "Capex_Pct", '0.0%'); r += 1
     put(r, "Working capital (% of revenue)", a.operating.nwc_pct_revenue, "NWC_Pct", '0.0%'); r += 1
     put(r, "Tax rate", a.operating.tax_rate, "Tax_Rate", '0.0%'); r += 1
-    put(r, "NOL shelter limit (% of income)", a.nol_limit_pct, "NOL_Limit", '0.0%'); r += 2
+    put(r, "NOL shelter limit (% of income)", a.nol_limit_pct, "NOL_Limit", '0.0%'); r += 1
+    # §163(j), as three switches rather than one. An analyst asked to "run it
+    # pre-2018" needs to turn the cap off; one asked to "run it on the old ATI
+    # basis" needs the D&A add-back back. Both are one cell.
+    lim = a.interest_limitation
+    put(r, "§163(j) interest cap applies (1 = yes)",
+        1 if lim.enabled else 0, "Interest_Limit_On", '0'); r += 1
+    put(r, "§163(j) — deductible % of ATI", lim.pct_of_ati, "Interest_Limit_Pct", '0.0%'); r += 1
+    put(r, "§163(j) — ATI adds back D&A (1 = pre-2022 basis)",
+        1 if lim.ati_basis == "ebitda" else 0, "Interest_Limit_DA", '0'); r += 2
 
     head(inp, r, "Operating path — by year"); r += 1
     label(inp, r, "Year", indent=1)
@@ -667,6 +676,67 @@ def build_workbook(a: Assumptions):
         f"={col(i)}{rows['EBIT']}+{col(i)}{rows['CashInt']}+{col(i)}{rows['PIK']}"
         f"+{col(i)}{rows['Financing fee amortisation']}+{col(i)}{rev_fee}"), bold=True)
 
+    # --- §163(j), before the NOL, because that is the order of the statute.
+    # The interest sits above as a negative number; the cap works in positives,
+    # so it is negated once here and stays positive down the block.
+    label(model, m, "Business interest (§163(j))", 1)
+    bus_int = m
+    for i in range(years):
+        c = model.cell(row=m, column=2 + i, value=(
+            f"=-({col(i)}{rows['CashInt']}+{col(i)}{rows['PIK']}"
+            f"+{col(i)}{rows['Financing fee amortisation']})"))
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+    m += 1
+
+    # The undrawn commitment fee is added back because it is NOT business
+    # interest — it is deducted in full and sits outside the cap entirely.
+    label(model, m, "Adjusted taxable income", 1)
+    ati = m
+    for i in range(years):
+        c = model.cell(row=m, column=2 + i, value=(
+            f"={col(i)}{rows['EBIT']}+{col(i)}{rev_fee}"
+            f"-Interest_Limit_DA*{col(i)}{rows['D&A']}"))
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+    m += 1
+
+    label(model, m, "Disallowed interest brought forward", 1)
+    dis_open = m
+    for i in range(years):
+        # Denied interest is treated as paid again next year, and never expires.
+        v = "=0" if i == 0 else f"={col(i-1)}{m+3}"
+        c = model.cell(row=m, column=2 + i, value=v)
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+    m += 1
+
+    label(model, m, "Deductible capacity", 1)
+    capacity = m
+    for i in range(years):
+        c = model.cell(row=m, column=2 + i, value=(
+            f"=IF(Interest_Limit_On=1,Interest_Limit_Pct*MAX({col(i)}{ati},0),"
+            f"{col(i)}{bus_int}+{col(i)}{dis_open})"))
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+    m += 1
+
+    label(model, m, "Interest deducted", 1)
+    deducted = m
+    for i in range(years):
+        c = model.cell(row=m, column=2 + i, value=(
+            f"=MIN({col(i)}{bus_int}+{col(i)}{dis_open},{col(i)}{capacity})"))
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+    m += 1
+
+    label(model, m, "Disallowed interest carried forward", 1)
+    for i in range(years):
+        c = model.cell(row=m, column=2 + i, value=(
+            f"={col(i)}{bus_int}+{col(i)}{dis_open}-{col(i)}{deducted}"))
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+    m += 1
+
+    # What tax is charged on: book profit, plus back the interest tax refused.
+    line("Taxable income", lambda i: (
+        f"={col(i)}{rows['Pre-tax income']}+{col(i)}{bus_int}-{col(i)}{deducted}"))
+    taxable = rows["Taxable income"]
+
     label(model, m, "NOL brought forward", 1)
     nol_open = m
     for i in range(years):
@@ -678,21 +748,21 @@ def build_workbook(a: Assumptions):
     nol_used = m
     for i in range(years):
         c = model.cell(row=m, column=2 + i, value=(
-            f"=IF({col(i)}{rows['Pre-tax income']}>0,"
-            f"MIN({col(i)}{nol_open},NOL_Limit*{col(i)}{rows['Pre-tax income']}),0)"))
+            f"=IF({col(i)}{taxable}>0,"
+            f"MIN({col(i)}{nol_open},NOL_Limit*{col(i)}{taxable}),0)"))
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     m += 1
     label(model, m, "NOL carried forward", 1)
     for i in range(years):
         c = model.cell(row=m, column=2 + i, value=(
-            f"=IF({col(i)}{rows['Pre-tax income']}>0,{col(i)}{nol_open}-{col(i)}{nol_used},"
-            f"{col(i)}{nol_open}-{col(i)}{rows['Pre-tax income']})"))
+            f"=IF({col(i)}{taxable}>0,{col(i)}{nol_open}-{col(i)}{nol_used},"
+            f"{col(i)}{nol_open}-{col(i)}{taxable})"))
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     m += 1
 
     line("Tax", lambda i: (
-        f"=-IF({col(i)}{rows['Pre-tax income']}>0,"
-        f"({col(i)}{rows['Pre-tax income']}-{col(i)}{nol_used})*Tax_Rate,0)"))
+        f"=-IF({col(i)}{taxable}>0,"
+        f"({col(i)}{taxable}-{col(i)}{nol_used})*Tax_Rate,0)"))
     line("Net income", lambda i: f"={col(i)}{rows['Pre-tax income']}+{col(i)}{rows['Tax']}", bold=True)
     m += 1
 
