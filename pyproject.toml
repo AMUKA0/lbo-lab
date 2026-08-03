@@ -15,7 +15,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "httpx2", "formulas>=1.2"]
-api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+# The API offers workbook export and upload, so it needs both — openpyxl to
+# build the file and python-multipart for FastAPI to accept one. Neither is
+# optional in practice: without multipart the app fails at IMPORT time, because
+# the route decorator inspects the signature.
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+    "openpyxl>=3.1",
+]
+# The engine can build a workbook without FastAPI installed at all.
 excel = ["openpyxl>=3.1"]
 
 [tool.setuptools.packages.find]

@@ -34,6 +34,12 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir -e ".[api]"
 
 COPY api/ ./api/
+
+# Import the app at BUILD time. A missing runtime dependency otherwise surfaces
+# as "container failed to start" minutes into a deploy, with the real cause
+# buried in the logs — python-multipart went missing exactly that way, because
+# a developer venv had it and the declaration did not.
+RUN python -c "import api.main" 
 # The built SPA, into the path api/main.py looks for. If this is missing the app
 # still serves /api correctly and simply has no front end — a mounted-last
 # catch-all, not a hard dependency.
