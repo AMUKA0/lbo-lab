@@ -57,7 +57,25 @@ Cloud Run scales to zero, so a visit after an idle period waits a few seconds fo
 pytest
 ```
 
-173 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+187 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+
+## Excel export — a live model, not a dump
+
+PE runs on Excel, and a model you cannot click through is not trusted. So the export is a **formula-driven workbook**, not a record of the answers: every calculated cell contains a formula, inputs are blue named ranges, and the layout follows the conventions every bank uses — blue for hardcoded inputs, black for same-sheet formulas, green for cross-sheet links.
+
+```bash
+pip install -e ".[api,excel]"
+```
+
+Five sheets, separated by role: `Inputs`, `S&U`, `Model`, `Returns`, `Checks`.
+
+Three things about it are load-bearing:
+
+- **Iterative calculation is switched on in the file itself.** Interest on average balances is circular in Excel exactly as it is here, and a workbook that opens to a wall of circular-reference warnings reads as broken. The flag is written into the file rather than left for the user to find.
+- **Inputs are named ranges** (`Entry_EBITDA`, never `Inputs!B7`), because analysts insert rows and named ranges survive that.
+- **The workbook is tested against the engine.** `tests/test_workbook.py` writes the file, recalculates it with an independent formula evaluator, and asserts every line agrees to 1e-4 — EBITDA, interest, tax, closing cash, net debt, exit equity and MOIC, across every year. A formula export is a second implementation of the maths, and without that test it can drift from the first silently.
+
+The recalculation runs on the opening-balance convention, which is acyclic and so evaluable outside Excel; the circular variant is verified by asserting the formula shape and the iteration flag. Mid-hold capital events and PIK toggles are **refused** rather than silently dropped — they are decisions the engine reaches by search, and a workbook that omitted them would disagree with the model and give no clue why.
 
 ## The case-study library
 

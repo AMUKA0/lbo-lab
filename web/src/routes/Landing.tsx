@@ -44,6 +44,11 @@ const FEATURES = [
   },
   {
     no: "07",
+    title: "Excel that is actually a model",
+    body: "The export is a live workbook, not a dump of the answers: every calculated cell carries a formula, inputs are blue named ranges, and iterative calculation is switched on in the file because interest on average balances is circular in Excel too. A test writes the workbook, recalculates it with an independent evaluator and asserts it agrees with the engine line by line.",
+  },
+  {
+    no: "08",
     title: "The lender's view",
     body: "Net leverage, interest coverage, (EBITDA − capex) coverage and FCF conversion by year, against the covenant conventions credit committees actually use. A structure that breaches them on paper doesn't get financed on those terms.",
   },
@@ -81,7 +86,7 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="173" k="tests · golden case solved by hand" />
+          <Stat v="187" k="tests · golden case solved by hand" />
           <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
           <Stat v="1e-10" k="tolerance on the interest solve" />

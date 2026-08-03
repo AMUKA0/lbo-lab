@@ -255,6 +255,35 @@ def breakeven(req: BreakevenRequest) -> dict:
     }
 
 
+@app.post("/api/model.xlsx")
+def model_xlsx(req: DealRequest) -> StreamingResponse:
+    """The deal as a LIVE Excel model — formulas, not values.
+
+    The distinction is the point. A values export cannot be audited or flexed,
+    and in this industry a model you cannot click through is not trusted. Here
+    every calculated cell carries a formula, inputs are blue named ranges, and
+    iterative calculation is switched on in the file because interest on average
+    balances is circular in Excel exactly as it is here.
+    """
+    from lbo_engine.workbook import workbook_bytes
+
+    try:
+        payload = workbook_bytes(req.assumptions)
+    except ValueError as exc:
+        # Unsupported capital events are refused rather than silently dropped,
+        # so this is a describable finding, not a crash.
+        raise HTTPException(
+            status_code=422,
+            detail={"kind": "export_unsupported", "message": str(exc)},
+        ) from exc
+
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="lbo-model.xlsx"'},
+    )
+
+
 @app.post("/api/schedule.csv")
 def schedule_csv(req: DealRequest) -> StreamingResponse:
     """The annual schedule as CSV — the format anyone reviewing this will

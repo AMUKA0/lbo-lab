@@ -79,6 +79,27 @@ export const fetchBreakeven = (
   signal?: AbortSignal,
 ) => post<BreakevenResult>("/api/breakeven", { assumptions, target_irr: targetIrr }, signal);
 
+/** The live Excel model: formulas, named ranges, iterative calculation on.
+ *  Unlike the CSV this is a working model, not a record of one. */
+export async function downloadWorkbook(assumptions: Assumptions): Promise<void> {
+  const response = await fetch("/api/model.xlsx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assumptions }),
+  });
+  if (response.status === 422) {
+    const detail = (await response.json().catch(() => null))?.detail;
+    throw new Error(detail?.message ?? "This deal cannot be exported to Excel.");
+  }
+  if (!response.ok) throw new Error("Could not build the workbook.");
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "lbo-model.xlsx";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Streams the annual schedule to a file the reviewer can check in Excel. */
 export async function downloadSchedule(assumptions: Assumptions): Promise<void> {
   const response = await fetch("/api/schedule.csv", {

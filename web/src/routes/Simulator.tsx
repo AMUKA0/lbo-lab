@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   downloadSchedule,
+  downloadWorkbook,
   fetchBreakeven,
   fetchDefaults,
   fetchExitProfile,
@@ -142,6 +143,9 @@ function SimulatorBody({
 }) {
   // Sliders fire continuously; let the value settle before asking the engine.
   const settled = useDebounced(assumptions, 200);
+  // Surfaced inline rather than swallowed: the Excel export refuses deals with
+  // capital events it cannot model, and that reason is worth reading.
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const run = useEngineQuery(settled, useCallback((a, signal) => runDeal(a, signal), []));
   const sensitivity = useEngineQuery(
@@ -226,15 +230,26 @@ function SimulatorBody({
             </button>
           )}
           <span className="eyebrow">All figures in $m unless marked</span>
+          {/* The workbook first, because it is the one worth having: a live
+              model an analyst can audit and flex, rather than a record of one. */}
           <button
-            className="btn"
+            className="btn btn-primary"
             style={{ marginLeft: "auto" }}
-            onClick={() => void downloadSchedule(assumptions)}
+            title="A live model — formulas, blue inputs as named ranges, iterative calculation already switched on"
+            onClick={() =>
+              void downloadWorkbook(assumptions).catch((e: unknown) =>
+                setExportError(e instanceof Error ? e.message : "Export failed."),
+              )
+            }
           >
-            Export schedule (CSV)
+            Export live model (Excel)
+          </button>
+          <button className="btn" onClick={() => void downloadSchedule(assumptions)}>
+            Schedule (CSV)
           </button>
         </div>
 
+        {exportError && <div className="callout">{exportError}</div>}
         {run.structureFailed && run.error && <StructureFailedNotice message={run.error} />}
         {run.error && !run.structureFailed && (
           <div className="callout">
