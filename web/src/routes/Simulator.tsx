@@ -15,6 +15,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   downloadSchedule,
   downloadWorkbook,
+  importWorkbook,
+  WorkbookInvalid,
   fetchBreakeven,
   fetchDefaults,
   fetchExitProfile,
@@ -146,6 +148,9 @@ function SimulatorBody({
   // Surfaced inline rather than swallowed: the Excel export refuses deals with
   // capital events it cannot model, and that reason is worth reading.
   const [exportError, setExportError] = useState<string | null>(null);
+  // Problems from an uploaded workbook, listed with their cells. Someone
+  // fixing a spreadsheet wants every mistake at once, not one per attempt.
+  const [importProblems, setImportProblems] = useState<string[]>([]);
 
   const run = useEngineQuery(settled, useCallback((a, signal) => runDeal(a, signal), []));
   const sensitivity = useEngineQuery(
@@ -244,12 +249,49 @@ function SimulatorBody({
           >
             Export live model (Excel)
           </button>
+          <label className="btn" style={{ cursor: "pointer" }}
+                 title="Bring back a workbook you have been working in — assumptions are read from the named ranges">
+            Import workbook
+            <input
+              type="file"
+              accept=".xlsx"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";           // so re-picking the same file fires again
+                if (!file) return;
+                setImportProblems([]);
+                setExportError(null);
+                void importWorkbook(file)
+                  .then(setAssumptions)
+                  .catch((err: unknown) => {
+                    if (err instanceof WorkbookInvalid && err.problems.length) {
+                      setImportProblems(err.problems.map((p) => p.message));
+                    } else {
+                      setImportProblems([
+                        err instanceof Error ? err.message : "That workbook could not be read.",
+                      ]);
+                    }
+                  });
+              }}
+            />
+          </label>
           <button className="btn" onClick={() => void downloadSchedule(assumptions)}>
             Schedule (CSV)
           </button>
         </div>
 
         {exportError && <div className="callout">{exportError}</div>}
+        {importProblems.length > 0 && (
+          <div className="callout">
+            <strong>This workbook could not be read.</strong>
+            <ul style={{ margin: "var(--s2) 0 0", paddingLeft: "var(--s5)" }}>
+              {importProblems.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {run.structureFailed && run.error && <StructureFailedNotice message={run.error} />}
         {run.error && !run.structureFailed && (
           <div className="callout">

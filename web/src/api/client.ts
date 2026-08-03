@@ -79,6 +79,36 @@ export const fetchBreakeven = (
   signal?: AbortSignal,
 ) => post<BreakevenResult>("/api/breakeven", { assumptions, target_irr: targetIrr }, signal);
 
+/** One thing wrong with an uploaded workbook, located precisely enough to fix. */
+export interface WorkbookProblem {
+  field: string;
+  cell: string | null;
+  message: string;
+}
+
+export class WorkbookInvalid extends Error {
+  constructor(message: string, readonly problems: WorkbookProblem[]) {
+    super(message);
+    this.name = "WorkbookInvalid";
+  }
+}
+
+/** Read a deal back out of a workbook the analyst has been working in. */
+export async function importWorkbook(file: File): Promise<Assumptions> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/import.xlsx", { method: "POST", body });
+
+  if (!response.ok) {
+    const detail = (await response.json().catch(() => null))?.detail;
+    throw new WorkbookInvalid(
+      detail?.message ?? "That workbook could not be read.",
+      detail?.problems ?? [],
+    );
+  }
+  return (await response.json()).assumptions as Assumptions;
+}
+
 /** The live Excel model: formulas, named ranges, iterative calculation on.
  *  Unlike the CSV this is a working model, not a record of one. */
 export async function downloadWorkbook(assumptions: Assumptions): Promise<void> {

@@ -57,7 +57,7 @@ Cloud Run scales to zero, so a visit after an idle period waits a few seconds fo
 pytest
 ```
 
-187 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+202 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 
@@ -74,6 +74,14 @@ Three things about it are load-bearing:
 - **Iterative calculation is switched on in the file itself.** Interest on average balances is circular in Excel exactly as it is here, and a workbook that opens to a wall of circular-reference warnings reads as broken. The flag is written into the file rather than left for the user to find.
 - **Inputs are named ranges** (`Entry_EBITDA`, never `Inputs!B7`), because analysts insert rows and named ranges survive that.
 - **The workbook is tested against the engine.** `tests/test_workbook.py` writes the file, recalculates it with an independent formula evaluator, and asserts every line agrees to 1e-4 — EBITDA, interest, tax, closing cash, net debt, exit equity and MOIC, across every year. A formula export is a second implementation of the maths, and without that test it can drift from the first silently.
+
+### The round trip
+
+The export **is** the template — a separate blank one is more code and worse UX, since starting from a working model beats starting from an empty one. So: export, edit in Excel where you are fluent, upload it back.
+
+Import resolves everything through **named ranges**, never cell addresses, and that is not fastidiousness. Analysts insert rows; Excel moves the names with the content, whereas a reader keyed to `Inputs!B7` would silently read the wrong cell and produce a deal that is subtly wrong rather than obviously broken.
+
+Errors come back as a list with cell references — every problem at once, because someone fixing a spreadsheet does not want one round trip per mistake. A percentage typed as `25` instead of `25%` is called out by name, since it is the commonest error there is.
 
 The recalculation runs on the opening-balance convention, which is acyclic and so evaluable outside Excel; the circular variant is verified by asserting the formula shape and the iteration flag. Mid-hold capital events and PIK toggles are **refused** rather than silently dropped — they are decisions the engine reaches by search, and a workbook that omitted them would disagree with the model and give no clue why.
 

@@ -169,19 +169,27 @@ def build_workbook(a: Assumptions):
 
     head(inp, r, "Capital structure"); r += 1
     tranche_rows: list[dict] = []
-    for t in a.tranches:
+    for idx, t in enumerate(a.tranches):
         label(inp, r, t.name, indent=0)
         inp.cell(row=r, column=1).font = Font(bold=True)
         r += 1
-        slug = _slug(t.name)
+        # Positional, not derived from the name — so renaming a tranche in the
+        # workbook round-trips instead of breaking the lookup.
+        slug = f"T{idx + 1}"
         rows = {
-            "turns": put(r, "Leverage (turns of EBITDA)", t.leverage_turns, f"{slug}_Turns", '0.00"x"'),
+            "name": put(r, "Tranche name", t.name, f"{slug}_Name"),
         }
+        r += 1
+        rows["turns"] = put(r, "Leverage (turns of EBITDA)", t.leverage_turns,
+                            f"{slug}_Turns", '0.00"x"')
         r += 1
         rows["cash"] = put(r, "Cash coupon", t.cash_rate, f"{slug}_Rate", '0.00%'); r += 1
         rows["pik"] = put(r, "PIK rate", t.pik_rate, f"{slug}_PIK", '0.00%'); r += 1
         rows["amort"] = put(r, "Mandatory amortisation (% of original)", t.mandatory_amort_pct,
                             f"{slug}_Amort", '0.0%'); r += 1
+        rows["sweep_flag"] = put(r, "Sweeps against this tranche (1/0)",
+                                 1 if t.sweepable else 0, f"{slug}_Sweepable", '0')
+        r += 1
         rows["sweepable"] = t.sweepable
         rows["name"] = t.name
         rows["slug"] = slug
@@ -205,6 +213,14 @@ def build_workbook(a: Assumptions):
 
     growth_ref = f"Inputs!${{c}}${growth_row}"
     margin_ref = f"Inputs!${{c}}${margin_row}"
+
+    # The per-year rows as ranges, and the hold as a name, so a reader can
+    # recover the whole operating path without knowing where anything sits.
+    last_col = chr(ord("B") + years - 1)
+    wb.defined_names.add(DefinedName(
+        "Revenue_Growth", attr_text=f"Inputs!$B${growth_row}:${last_col}${growth_row}"))
+    wb.defined_names.add(DefinedName(
+        "EBITDA_Margin", attr_text=f"Inputs!$B${margin_row}:${last_col}${margin_row}"))
 
     # ------------------------------------------------------- Sources & Uses
     su_ws = wb.create_sheet("S&U")

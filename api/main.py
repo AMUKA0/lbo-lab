@@ -17,7 +17,7 @@ import io
 import math
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -282,6 +282,52 @@ def model_xlsx(req: DealRequest) -> StreamingResponse:
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="lbo-model.xlsx"'},
     )
+
+
+@app.post("/api/import.xlsx")
+async def import_xlsx(file: UploadFile = File(...)) -> dict:
+    """Read a deal back out of an exported workbook.
+
+    The round trip is the point: an analyst works in Excel, where they are
+    fluent, and brings the result back rather than retyping assumptions into a
+    form. Problems come back as a list with cell references, because someone
+    fixing a spreadsheet wants every mistake at once, not one round trip each.
+    """
+    import io as _io
+
+    from lbo_engine.workbook_read import WorkbookError, read_workbook
+
+    payload = await file.read()
+    if len(payload) > 5_000_000:
+        raise HTTPException(
+            status_code=413,
+            detail={"kind": "too_large", "message": "Workbooks are capped at 5MB."},
+        )
+    try:
+        deal = read_workbook(_io.BytesIO(payload))
+    except WorkbookError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "kind": "workbook_invalid",
+                "message": "This workbook could not be read.",
+                "problems": [
+                    {"field": p.name, "cell": p.cell, "message": p.message}
+                    for p in exc.problems
+                ],
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "kind": "workbook_invalid",
+                "message": "That file could not be opened as an Excel workbook.",
+                "problems": [],
+            },
+        ) from exc
+
+    return {"assumptions": deal.model_dump()}
 
 
 @app.post("/api/schedule.csv")

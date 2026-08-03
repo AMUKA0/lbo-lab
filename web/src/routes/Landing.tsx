@@ -45,7 +45,7 @@ const FEATURES = [
   {
     no: "07",
     title: "Excel that is actually a model",
-    body: "The export is a live workbook, not a dump of the answers: every calculated cell carries a formula, inputs are blue named ranges, and iterative calculation is switched on in the file because interest on average balances is circular in Excel too. A test writes the workbook, recalculates it with an independent evaluator and asserts it agrees with the engine line by line.",
+    body: "The export is a live workbook, not a dump of the answers: every calculated cell carries a formula, inputs are blue named ranges, and iterative calculation is switched on in the file because interest on average balances is circular in Excel too. Export it, work on it in Excel, upload it back. A test writes the workbook, recalculates it with an independent evaluator and asserts it agrees with the engine line by line.",
   },
   {
     no: "08",
@@ -86,7 +86,7 @@ export function Landing() {
         </section>
 
         <div className="stat-strip">
-          <Stat v="187" k="tests · golden case solved by hand" />
+          <Stat v="202" k="tests · golden case solved by hand" />
           <Stat v="4" k="real deals replayed, fully sourced" />
           <Stat v="7" k="drivers in the tornado" />
           <Stat v="1e-10" k="tolerance on the interest solve" />

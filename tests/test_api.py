@@ -17,6 +17,8 @@ from api.presets import PRESETS, default_deal
 
 client = TestClient(app)
 
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 
 @pytest.fixture
 def deal() -> dict:
@@ -160,3 +162,62 @@ def test_spa_fallback_never_serves_source_files():
         body = client.get(path).text
         assert "build-system" not in body
         assert "FastAPI" not in body
+
+
+class TestWorkbookEndpoints:
+    """The Excel round trip over HTTP. The engine-level tests prove the maths;
+    these prove the transport does not lose or mangle it."""
+
+    def _workbook(self, deal: dict) -> bytes:
+        return client.post("/api/model.xlsx", json={"assumptions": deal}).content
+
+    def test_a_deal_survives_the_round_trip_over_http(self, deal):
+        payload = self._workbook(deal)
+        assert payload[:2] == b"PK"  # a real xlsx is a zip
+
+        response = client.post(
+            "/api/import.xlsx",
+            files={"file": ("model.xlsx", payload, _XLSX)},
+        )
+        assert response.status_code == 200
+        assert response.json()["assumptions"] == deal
+
+    def test_the_export_is_named_and_typed_for_excel(self, deal):
+        response = client.post("/api/model.xlsx", json={"assumptions": deal})
+        assert response.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument")
+        assert ".xlsx" in response.headers["content-disposition"]
+
+    def test_a_deal_the_workbook_cannot_model_is_refused_with_a_reason(self, deal):
+        """Silently dropping a recap would hand over a workbook that disagrees
+        with the model and gives no clue why."""
+        deal["recaps"] = [{"year": 2, "amount": 50.0, "target_leverage_turns": None,
+                           "tranche": None, "financing_fee_pct": 0.02}]
+        response = client.post("/api/model.xlsx", json={"assumptions": deal})
+        assert response.status_code == 422
+        assert response.json()["detail"]["kind"] == "export_unsupported"
+        assert "recapitalisation" in response.json()["detail"]["message"]
+
+    def test_a_broken_workbook_comes_back_with_the_cells_to_fix(self, deal):
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        wb = load_workbook(_io.BytesIO(self._workbook(deal)))
+        for name in ("Entry_Multiple", "Tax_Rate"):
+            sheet, ref = next(iter(wb.defined_names[name].destinations))
+            wb[sheet][ref.replace("$", "")] = None
+        buf = _io.BytesIO(); wb.save(buf)
+
+        response = client.post(
+            "/api/import.xlsx", files={"file": ("broken.xlsx", buf.getvalue(), _XLSX)})
+        assert response.status_code == 422
+        problems = response.json()["detail"]["problems"]
+        assert len(problems) >= 2
+        assert all(p["cell"] for p in problems), "every problem must name its cell"
+
+    def test_something_that_is_not_a_workbook_is_rejected_politely(self):
+        response = client.post(
+            "/api/import.xlsx", files={"file": ("cv.pdf", b"%PDF-1.4 not a workbook", _XLSX)})
+        assert response.status_code == 422
+        assert "could not be opened" in response.json()["detail"]["message"]
