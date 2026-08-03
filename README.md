@@ -57,7 +57,7 @@ Cloud Run scales to zero, so a visit after an idle period waits a few seconds fo
 pytest
 ```
 
-202 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+197 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 
@@ -83,7 +83,11 @@ Import resolves everything through **named ranges**, never cell addresses, and t
 
 Errors come back as a list with cell references — every problem at once, because someone fixing a spreadsheet does not want one round trip per mistake. A percentage typed as `25` instead of `25%` is called out by name, since it is the commonest error there is.
 
-The recalculation runs on the opening-balance convention, which is acyclic and so evaluable outside Excel; the circular variant is verified by asserting the formula shape and the iteration flag. Mid-hold capital events and PIK toggles are **refused** rather than silently dropped — they are decisions the engine reaches by search, and a workbook that omitted them would disagree with the model and give no clue why.
+The recalculation runs on the opening-balance convention, which is acyclic and so evaluable outside Excel; the circular variant is verified by asserting the formula shape and the iteration flag. **Mid-hold capital events are modelled**, and the earlier refusal of them overstated the problem. Only the PIK election is genuinely a search: divestitures and sponsor support are fully specified inputs, and a recap sized by target leverage is `MAX(target × EBITDA − net debt, 0)`, which is arithmetic. The toggle election is exported as a blue 1/0 the analyst can override — honest about its origin, and flexible.
+
+Getting there surfaced three disagreements with the engine, each found by the recalculation test rather than by reading: an asset sale must clear the revolver before the tranches, recap debt must join the amortising base or the incremental debt never amortises again, and revenue leaving with a divested business must not release working capital. All four scenarios — each event alone, and all three at once — now agree to zero.
+
+What the export still refuses is a structure that **runs out of liquidity**, because there is no complete schedule to export. The engine is run unconditionally before writing, so the workbook can never print a schedule the model itself declines to print.
 
 ## The case-study library
 

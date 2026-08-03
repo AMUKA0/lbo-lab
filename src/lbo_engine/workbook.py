@@ -60,6 +60,22 @@ class _Ref:
     cell: str
 
 
+def _allocate(pool: str, taken: list[str], capacity: str, negative: bool = True) -> str:
+    """Formula for one claimant's share of a pool paid out in a fixed order.
+
+    The same shape serves three jobs — the cash sweep, an asset sale's
+    senior-first mandatory prepayment, and a sponsor repurchase working
+    junior-first — and writing it once is the difference between three
+    consistent formulas and three chances to fumble a MIN/MAX by hand.
+
+    Each claimant takes what the ones ahead of it left, capped at what it can
+    absorb.
+    """
+    already = "+".join(taken) if taken else "0"
+    sign = "-" if negative else ""
+    return f"={sign}MIN(MAX({pool}-({already}),0),{capacity})"
+
+
 def _money(ws, cell: str) -> None:
     ws[cell].number_format = '#,##0.0;(#,##0.0)'
 
@@ -70,7 +86,13 @@ def build_workbook(a: Assumptions):
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.workbook.defined_name import DefinedName
 
-    _reject_unsupported(a)
+    # Run the engine first, always. It is cheap, it supplies the decisions the
+    # event rows need, and — the reason it is unconditional — it refuses
+    # structures that cannot finance. Without this the workbook would happily
+    # print a schedule running a negative cash balance for a deal the model
+    # itself declines to print, which is exactly the inconsistency the Checks
+    # sheet exists to make impossible.
+    solved = _solve_for_events(a)
 
     su = build_sources_and_uses(a)
     years = a.hold_years
@@ -190,6 +212,8 @@ def build_workbook(a: Assumptions):
         rows["sweep_flag"] = put(r, "Sweeps against this tranche (1/0)",
                                  1 if t.sweepable else 0, f"{slug}_Sweepable", '0')
         r += 1
+        rows["toggle"] = t.pik_toggle
+        rows["premium"] = t.pik_toggle_premium
         rows["sweepable"] = t.sweepable
         rows["name"] = t.name
         rows["slug"] = slug
@@ -203,6 +227,75 @@ def build_workbook(a: Assumptions):
     put(r, "Minimum cash ($m)", a.minimum_cash, "Minimum_Cash", '#,##0.0'); r += 1
     put(r, "Cash sweep (% of excess)", a.cash_sweep_pct, "Sweep_Pct", '0.0%'); r += 2
 
+    # --- mid-hold capital events, one row per year so an analyst can move an
+    # event to a different year or zero it out without touching a formula.
+    ev: dict[str, int] = {}
+
+    def year_row(text: str, values, name: str, fmt: str = '#,##0.0') -> None:
+        nonlocal r
+        label(inp, r, text, indent=1)
+        for i in range(years):
+            c = inp.cell(row=r, column=2 + i, value=values[i])
+            c.font = Font(color=_BLUE, bold=True)
+            c.fill = PatternFill("solid", fgColor=_INPUT_BG)
+            c.number_format = fmt
+        end = chr(ord("B") + years - 1)
+        wb.defined_names.add(DefinedName(name, attr_text=f"Inputs!$B${r}:${end}${r}"))
+        ev[name] = r
+        r += 1
+
+    def per_year(fn):
+        return [float(fn(y)) for y in range(1, years + 1)]
+
+    has_events = bool(a.divestitures or a.injections or a.recaps)
+    toggles = [i for i, t in enumerate(a.tranches) if t.pik_toggle]
+
+    # A recap sized by target leverage, and a toggle election, are decisions the
+    # engine reaches by looking at the solved year. Exporting each as a number is
+    # honest about its origin and leaves it flexible — an analyst can override
+    # any of them and the schedule follows.
+    if has_events or toggles:
+        head(inp, r, "Capital events — by year"); r += 1
+        label(inp, r, "Year", indent=1)
+        for i in range(years):
+            c = inp.cell(row=r, column=2 + i, value=i + 1)
+            c.font = Font(bold=True, color=_BLACK)
+            c.alignment = Alignment(horizontal="center")
+        r += 1
+
+    if a.divestitures:
+        year_row("Divestiture proceeds, net of costs and tax",
+                 per_year(lambda y: solved.years[y - 1].divestiture_proceeds),
+                 "Divest_Net")
+    if a.divestitures:
+        # Revenue that leaves with a sold business. Without it the model books a
+        # working-capital release from revenue that departed and was already
+        # inside the sale consideration — the engine excludes it, so the
+        # workbook must too or the two disagree.
+        year_row("Revenue leaving with divested businesses",
+                 per_year(lambda y: sum(d.revenue_removed for d in a.divestitures_for(y))),
+                 "Divest_Revenue")
+    if a.recaps:
+        year_row("Recap financing fee",
+                 per_year(lambda y: solved.years[y - 1].recap_fee),
+                 "Recap_Fee")
+    if a.injections:
+        year_row("Sponsor cash injected",
+                 per_year(lambda y: solved.years[y - 1].equity_injected),
+                 "Injection_Cash")
+        year_row("Debt extinguished by the sponsor",
+                 per_year(lambda y: solved.years[y - 1].debt_retired),
+                 "Injection_Retired")
+    if a.recaps:
+        year_row("Recap debt raised",
+                 per_year(lambda y: solved.years[y - 1].recap_raised),
+                 "Recap_Raised")
+    for idx in toggles:
+        year_row(f"{a.tranches[idx].name} — PIK elected (1/0)",
+                 per_year(lambda y, n=a.tranches[idx].name:
+                          1 if n in solved.years[y - 1].pik_elections else 0),
+                 f"T{idx + 1}_Elected", '0')
+
     head(inp, r, "Fees & exit"); r += 1
     put(r, "Transaction fees (% of EV)", a.transaction_fee_pct_ev, "Txn_Fee_Pct", '0.00%'); r += 1
     put(r, "Financing fees (% of debt)", a.financing_fee_pct_debt, "Fin_Fee_Pct", '0.00%'); r += 1
@@ -210,6 +303,10 @@ def build_workbook(a: Assumptions):
     put(r, "Exit costs (% of exit EV)", a.exit_fee_pct_ev, "Exit_Fee_Pct", '0.00%'); r += 1
     put(r, "Hold period (years)", a.hold_years, "Hold_Years", '0'); r += 1
     put(r, "Exit multiple (× EBITDA)", a.exit_multiple, "Exit_Multiple", '0.00"x"'); r += 1
+
+    def event_ref(name: str) -> str:
+        """A per-year event row, addressed by column."""
+        return f"Inputs!${{c}}${ev[name]}"
 
     growth_ref = f"Inputs!${{c}}${growth_row}"
     margin_ref = f"Inputs!${{c}}${margin_row}"
@@ -340,35 +437,87 @@ def build_workbook(a: Assumptions):
     label(model, m, "Change in working capital", 1)
     for i in range(years):
         base = "Entry_Revenue" if i == 0 else f"{col(i-1)}{rows['Revenue']}"
-        c = model.cell(row=m, column=2 + i, value=f"=-NWC_Pct*({col(i)}{rows['Revenue']}-{base})")
+        # A fall in revenue caused by selling a business is inorganic, so it
+        # must not drive a working-capital release: that cash went with the
+        # business. The sale completed at the END of the prior year, so it is
+        # that year's figure which is added back here.
+        organic = f"{col(i)}{rows['Revenue']}-{base}"
+        if a.divestitures and i > 0:
+            organic += f"+{event_ref('Divest_Revenue').format(c=col(i-1))}"
+        c = model.cell(row=m, column=2 + i, value=f"=-NWC_Pct*({organic})")
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     rows["dNWC"] = m; m += 1
-    line("Financing fee amortisation", lambda i: f"=-{fin_cell}/Fee_Tenor")
+    # Recap fees amortise over the same tenor, from the year after they are
+    # incurred, exactly as the entry financing fee does.
+    def fee_amort(i: int) -> str:
+        if not a.recaps or i == 0:
+            return f"=-{fin_cell}/Fee_Tenor"
+        prior = "+".join(event_ref("Recap_Fee").format(c=col(k)) for k in range(i))
+        return f"=-({fin_cell}+{prior})/Fee_Tenor"
+
+    line("Financing fee amortisation", fee_amort)
     m += 1
 
     # --- debt, per tranche. Opening / PIK / interest / amortisation / closing.
     head(model, m, "Debt schedule", years + 1); m += 1
+    # Senior-first, filled top down as the loop goes. The junior-first
+    # retirement cannot be, so its rows are reserved and filled after the loop.
+    divest_taken: list[int] = []
     for tr in tranche_rows:
         slug, nm = tr["slug"], tr["name"]
         label(model, m, nm, 0); model.cell(row=m, column=1).font = Font(bold=True); m += 1
 
-        label(model, m, "Opening", 2)
+        position = tranche_rows.index(tr)
+
+        label(model, m, "Brought forward", 2)
         for i in range(years):
-            v = f"={tr['amount_cell']}" if i == 0 else f"={col(i-1)}{m+4}"
+            v = f"={tr['amount_cell']}" if i == 0 else f"={col(i-1)}{{CLOSING}}"
             c = model.cell(row=m, column=2 + i, value=v)
             c.font = Font(color=_GREEN if i == 0 else _BLACK); c.number_format = '#,##0.0'
+        tr["bf_row"] = m; m += 1
+
+        if a.injections:
+            # Junior-first. An elective repurchase buys the most discounted
+            # paper, which is the junior end — unlike an asset sale, whose
+            # proceeds are a contractual senior-first prepayment.
+            # Reserved now, filled after the loop: junior-first means the
+            # tranches below this one claim first, and their rows do not exist
+            # yet. Excel does not care about write order, only references.
+            label(model, m, "Less: extinguished by the sponsor", 2)
+            tr["retire_row"] = m
+            m += 1
+
+        label(model, m, "Opening", 2)
+        for i in range(years):
+            parts = [f"{col(i)}{tr['bf_row']}"]
+            if a.injections:
+                parts.append(f"{col(i)}{tr['retire_row']}")
+            c = model.cell(row=m, column=2 + i, value="=" + "+".join(parts))
+            c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["open_row"] = m; m += 1
 
         label(model, m, "PIK accrual", 2)
         for i in range(years):
-            c = model.cell(row=m, column=2 + i, value=f"={col(i)}{tr['open_row']}*{slug}_PIK")
+            if tr["toggle"]:
+                elected = event_ref(f"T{position + 1}_Elected").format(c=col(i))
+                rate = (f"IF({elected}=1,{slug}_PIK+{slug}_Rate+{tr['premium']},{slug}_PIK)")
+            else:
+                rate = f"{slug}_PIK"
+            c = model.cell(row=m, column=2 + i, value=f"={col(i)}{tr['open_row']}*{rate}")
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["pik_row"] = m; m += 1
 
         label(model, m, "Mandatory amortisation", 2)
         for i in range(years):
+            # Amortisation is a % of ORIGINAL principal, and any recap debt
+            # raised in an earlier year joins that base — otherwise the
+            # incremental debt never amortises again.
+            base = tr["amount_cell"]
+            if a.recaps and i > 0:
+                prior = "+".join(f"{col(k)}{{RECAP}}" for k in range(i))
+                base = f"({tr['amount_cell']}+{prior})"
             c = model.cell(row=m, column=2 + i, value=(
-                f"=-MIN({tr['amount_cell']}*{slug}_Amort,"
+                f"=-MIN({base}*{slug}_Amort,"
                 f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']})"))
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["amort_row"] = m; m += 1
@@ -376,13 +525,55 @@ def build_workbook(a: Assumptions):
         label(model, m, "Cash sweep", 2)
         tr["sweep_row"] = m; m += 1   # filled once the waterfall exists
 
-        label(model, m, "Closing", 2)
+        # Two closings, because the engine has two. Interest is struck on the
+        # balance after the waterfall but BEFORE year-end capital events — money
+        # raised or repaid on 31 December earned no coupon that year.
+        label(model, m, "Closing, before year-end events", 2)
         for i in range(years):
             c = model.cell(row=m, column=2 + i, value=(
                 f"={col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}"
                 f"+{col(i)}{tr['amort_row']}+{col(i)}{tr['sweep_row']}"))
-            c.font = Font(color=_BLACK, bold=True); c.number_format = '#,##0.0'
+            c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["close_row"] = m; m += 1
+
+        if a.divestitures:
+            # Senior-first: this tranche absorbs only what the ones above it
+            # left. `divest_taken` accumulates their repayment rows, and each is
+            # negative, so it is subtracted to give a positive amount consumed.
+            label(model, m, "Less: divestiture proceeds", 2)
+            for i in range(years):
+                # The revolver is the most senior claim and is cleared first,
+                # so the tranches share only what is left of the proceeds.
+                pool = (f"MAX({event_ref('Divest_Net').format(c=col(i))}"
+                        f"-{col(i)}{{REVCLOSE}},0)")
+                c = model.cell(row=m, column=2 + i, value=_allocate(
+                    pool,
+                    [f"-{col(i)}{x}" for x in divest_taken],
+                    f"{col(i)}{tr['close_row']}"))
+                c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+            tr["divest_row"] = m
+            divest_taken.append(m)
+            m += 1
+
+        if a.recaps:
+            label(model, m, "Recap debt raised", 2)
+            target = (a.recaps[0].tranche or a.tranches[0].name)
+            for i in range(years):
+                v = event_ref("Recap_Raised").format(c=col(i)) if tr["name"] == target else "0"
+                c = model.cell(row=m, column=2 + i, value=f"={v}")
+                c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+            tr["recap_row"] = m; m += 1
+
+        label(model, m, "Closing", 2)
+        for i in range(years):
+            parts = [f"{col(i)}{tr['close_row']}"]
+            if a.divestitures:
+                parts.append(f"{col(i)}{tr['divest_row']}")
+            if a.recaps:
+                parts.append(f"{col(i)}{tr['recap_row']}")
+            c = model.cell(row=m, column=2 + i, value="=" + "+".join(parts))
+            c.font = Font(color=_BLACK, bold=True); c.number_format = '#,##0.0'
+        tr["final_row"] = m; m += 1
 
         label(model, m, "Cash interest", 2)
         for i in range(years):
@@ -397,6 +588,29 @@ def build_workbook(a: Assumptions):
             c = model.cell(row=m, column=2 + i, value=f"={slug}_Rate*{basis}")
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["int_row"] = m; m += 2
+
+        if a.recaps:
+            for i in range(1, years):
+                cell = model.cell(row=tr["amort_row"], column=2 + i)
+                cell.value = str(cell.value).replace("{RECAP}", str(tr["recap_row"]))
+
+        # The brought-forward row could not name the final closing row until it
+        # existed, so it is patched now.
+        for i in range(1, years):
+            model.cell(row=tr["bf_row"], column=2 + i).value = (
+                f"={col(i-1)}{tr['final_row']}")
+
+    if a.injections:
+        # Junior-first, so walk the stack from the bottom.
+        taken_rows: list[int] = []
+        for tr in reversed(tranche_rows):
+            for i in range(years):
+                c = model.cell(row=tr["retire_row"], column=2 + i, value=_allocate(
+                    event_ref("Injection_Retired").format(c=col(i)),
+                    [f"-{col(i)}{x}" for x in taken_rows],
+                    f"{col(i)}{tr['bf_row']}"))
+                c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+            taken_rows.append(tr["retire_row"])
 
     # --- revolver
     label(model, m, "Revolver", 0); model.cell(row=m, column=1).font = Font(bold=True); m += 1
@@ -525,10 +739,10 @@ def build_workbook(a: Assumptions):
             if not tr["sweepable"]:
                 formula = "=0"
             else:
-                already = ("+".join(f"{col(i)}{t}" for t in taken)) if taken else "0"
-                formula = (
-                    f"=-MIN(MAX({col(i)}{sweep_pool}-({already}),0),"
-                    f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}+{col(i)}{tr['amort_row']})")
+                formula = _allocate(
+                    f"{col(i)}{sweep_pool}",
+                    [f"{col(i)}{t}" for t in taken],
+                    f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}+{col(i)}{tr['amort_row']}")
             c = model.cell(row=tr["sweep_row"], column=2 + i, value=formula)
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         if tr["sweepable"]:
@@ -548,11 +762,20 @@ def build_workbook(a: Assumptions):
     # Now that the closing row exists, point each year's opening cash at the
     # prior year's close.
     for i in range(years):
-        v = f"={cash_cell}" if i == 0 else f"={col(i-1)}{cash_close}"
+        base = f"{cash_cell}" if i == 0 else f"{col(i-1)}{cash_close}"
+        # Rescue capital funds the year it goes into, so it arrives at the start.
+        v = (f"={base}+{event_ref('Injection_Cash').format(c=col(i))}"
+             if a.injections else f"={base}")
         c = model.cell(row=cash_open, column=2 + i, value=v)
         c.font = Font(color=_GREEN if i == 0 else _BLACK); c.number_format = '#,##0.0' 
 
-    close_sum = "+".join(f"{{c}}{tr['close_row']}" for tr in tranche_rows) + f"+{{c}}{rev_close}"
+    if a.divestitures:
+        for tr in tranche_rows:
+            for i in range(years):
+                cell = model.cell(row=tr["divest_row"], column=2 + i)
+                cell.value = str(cell.value).replace("{REVCLOSE}", str(rev_close))
+
+    close_sum = "+".join(f"{{c}}{tr['final_row']}" for tr in tranche_rows) + f"+{{c}}{rev_close}"
     line("Total debt", lambda i: "=" + close_sum.replace("{c}", col(i)), bold=True)
     line("Net debt", lambda i: f"={col(i)}{rows['Total debt']}-{col(i)}{cash_close}", bold=True)
 
@@ -679,32 +902,41 @@ def _slug(name: str) -> str:
     return "T_" + out.strip("_")
 
 
-def _reject_unsupported(a: Assumptions) -> None:
-    """Refuse rather than silently drop.
+def _solve_for_events(a: Assumptions):
+    """Run the engine once, to read off the decisions it makes by search.
 
-    A workbook that quietly omits a recap would disagree with the engine and
-    give no clue why. These are decisions the engine reaches by search — which
-    tranche to toggle, how much to raise to hit a target leverage — and encoding
-    that search in cell formulas is a different and much larger problem than
-    encoding the arithmetic.
+    A recap sized by target leverage resolves to a quantum only once the year
+    is solved, and a PIK election is chosen by trying options. Both are exported
+    as plain inputs: honest about their origin, and flexible, since an analyst
+    can override either and watch the schedule follow.
     """
-    unsupported = []
-    if a.recaps:
-        unsupported.append("dividend recapitalisations")
-    if a.divestitures:
-        unsupported.append("divestitures")
-    if a.injections:
-        unsupported.append("sponsor support")
-    if any(t.pik_toggle for t in a.tranches):
-        unsupported.append("PIK toggles")
-    if unsupported:
+    from lbo_engine.engine import run_lbo
+
+    try:
+        return run_lbo(a)
+    except ValueError as exc:
+        # A structure that runs out of liquidity has no schedule to export. Say
+        # that plainly rather than letting the engine's simulator-facing advice
+        # surface as though the export were at fault.
         raise ValueError(
-            "The Excel export does not yet model "
-            + ", ".join(unsupported)
-            + ". These are decisions the engine makes by search rather than by "
-              "formula, and a workbook that omitted them would silently disagree "
-              "with the model. Export a deal without them, or use the CSV schedule."
-        )
+            "This structure runs out of liquidity during the hold, so there is "
+            f"no complete schedule to export. The engine reports: {exc}"
+        ) from exc
+
+
+def _reject_unsupported(a: Assumptions) -> None:
+    """Nothing is refused any more, and the reason the earlier version did is
+    worth recording: it claimed these were decisions the engine makes by search
+    rather than by formula. That was only true of one of them. Divestitures and
+    sponsor support are fully specified inputs; a recap sized by target leverage
+    is MAX(target x EBITDA - net debt, 0), which is arithmetic. Only the PIK
+    election is a search, and exporting the engine's choice as an input the
+    analyst can override handles it honestly.
+
+    Kept as a hook so a future mechanic has an obvious place to declare itself
+    unsupported rather than silently producing a workbook that disagrees.
+    """
+    return None
 
 
 def workbook_bytes(a: Assumptions) -> bytes:

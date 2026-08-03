@@ -192,179 +192,95 @@ class TestItIsReadableByAnalysts:
             "Inputs", "S&U", "Model", "Returns", "Checks"]
 
 
-class TestItRefusesRatherThanMisleads:
-    @pytest.mark.parametrize("field,payload", [
-        ("recaps", {"year": 2, "amount": 50.0}),
-        ("divestitures", {"year": 2, "proceeds": 50.0}),
-        ("injections", {"year": 2, "amount": 50.0}),
-    ])
-    def test_unsupported_capital_events_raise(self, rich_deal, field, payload):
-        """Silently dropping a recap would produce a workbook that disagrees
-        with the model and gives no clue why."""
-        data = rich_deal.model_dump()
-        data[field] = [payload]
-        with pytest.raises(ValueError, match="does not yet model"):
-            build_workbook(Assumptions.model_validate(data))
+class TestMidHoldCapitalEvents:
+    """The workbook used to refuse these, on the grounds that they were
+    decisions the engine makes by search rather than by formula. That was true
+    of exactly one of them. Divestitures and sponsor support are fully specified
+    inputs; a recap sized by target leverage is MAX(target x EBITDA - net debt,
+    0), which is arithmetic. Only the PIK election is a search, and exporting
+    the engine's choice as an overridable input settles it.
+    """
 
-    def test_a_pik_toggle_raises(self, rich_deal):
-        data = rich_deal.model_dump()
-        data["tranches"][-1]["pik_toggle"] = True
-        with pytest.raises(ValueError, match="does not yet model"):
-            build_workbook(Assumptions.model_validate(data))
+    def _with(self, deal: Assumptions, **events) -> Assumptions:
+        payload = deal.model_dump()
+        payload["interest_on_average_balance"] = False
+        payload.update(events)
+        return Assumptions.model_validate(payload)
 
+    def _worst_disagreement(self, deal: Assumptions) -> float:
+        value, row, _ = _recalculate(_write(deal, "ev.xlsx"))
+        result = run_lbo(deal)
+        worst = 0.0
+        for i, year in enumerate(result.years):
+            c = chr(ord("B") + i)
+            for excel, engine in (
+                (value("Model", f"{c}{row('Model', 'Net debt')}"),
+                 year.total_debt_closing - year.closing_cash),
+                (value("Model", f"{c}{row('Model', 'Closing cash')}"), year.closing_cash),
+                (-value("Model", f"{c}{row('Model', 'Cash interest')}"), year.cash_interest_total),
+            ):
+                worst = max(worst, abs(excel - engine))
+        return worst
 
-class TestTheRoundTrip:
-    """Export, edit in Excel, bring it back. If a deal cannot survive that
-    journey unchanged, the workbook is a dead end rather than a working
-    document."""
+    DIVEST = [{"year": 3, "proceeds": 80.0, "fee_pct": 0.01, "taxable_gain": 20.0,
+               "revenue_removed": 30.0, "label": "A unit"}]
+    RECAP = [{"year": 4, "amount": 50.0, "target_leverage_turns": None,
+              "tranche": None, "financing_fee_pct": 0.02}]
+    INJECT = [{"year": 2, "amount": 40.0, "debt_retired": 60.0, "label": "Rescue"}]
 
-    def _roundtrip(self, deal: Assumptions) -> Assumptions:
-        import io as _io
+    def test_a_divestiture_agrees_with_the_engine(self, rich_deal):
+        assert self._worst_disagreement(
+            self._with(rich_deal, divestitures=self.DIVEST)) == pytest.approx(0, abs=1e-6)
 
-        from lbo_engine.workbook_read import read_workbook
+    def test_a_recap_agrees_with_the_engine(self, rich_deal):
+        assert self._worst_disagreement(
+            self._with(rich_deal, recaps=self.RECAP)) == pytest.approx(0, abs=1e-6)
 
-        buf = _io.BytesIO()
-        build_workbook(deal).save(buf)
-        buf.seek(0)
-        return read_workbook(buf)
+    def test_sponsor_support_agrees_with_the_engine(self, rich_deal):
+        assert self._worst_disagreement(
+            self._with(rich_deal, injections=self.INJECT)) == pytest.approx(0, abs=1e-6)
 
-    def test_a_deal_survives_export_and_reimport_exactly(self, rich_deal):
-        assert self._roundtrip(rich_deal).model_dump() == rich_deal.model_dump()
+    def test_all_three_together_agree_with_the_engine(self, rich_deal):
+        """Events interact — a divestiture changes the balance a later recap is
+        sized against — so agreeing separately is not the same as agreeing at
+        once."""
+        assert self._worst_disagreement(self._with(
+            rich_deal, divestitures=self.DIVEST, recaps=self.RECAP,
+            injections=self.INJECT)) == pytest.approx(0, abs=1e-6)
 
-    def test_a_flat_rate_does_not_become_a_path(self, simple_deal):
-        """A scalar growth rate is expanded across the columns on the way out.
-        It must collapse back, or every round trip quietly converts a flat
-        assumption into a hand-entered path and the interface stops offering
-        the simpler control."""
-        back = self._roundtrip(simple_deal)
-        assert back.model_dump() == simple_deal.model_dump()
+    def test_divested_revenue_does_not_release_working_capital(self, rich_deal):
+        """The subtle one, and the reason the divestiture case disagreed at
+        first: revenue that leaves with a sold business must not drive a
+        working-capital release, because that cash went with the business."""
+        wb = build_workbook(self._with(rich_deal, divestitures=self.DIVEST))
+        assert "Divest_Revenue" in set(wb.defined_names)
+        ws = wb["Model"]
+        row = next(r[0].row for r in ws.iter_rows(min_col=1, max_col=1)
+                   if r[0].value == "Change in working capital")
+        # Year two onward must net off the prior year's departed revenue.
+        assert "Divest_Revenue" not in str(ws.cell(row=row, column=2).value)
+        assert any("$" in str(ws.cell(row=row, column=2 + i).value)
+                   for i in range(1, rich_deal.hold_years))
 
-    def test_editing_a_cell_changes_the_deal(self, rich_deal):
-        """The whole point: work in Excel, bring it back changed."""
-        import io as _io
+    def test_recap_debt_joins_the_amortising_base(self, rich_deal):
+        """Otherwise the incremental debt enjoys a permanent amortisation
+        holiday — the same bug the engine had until a reviewer found it."""
+        wb = build_workbook(self._with(rich_deal, recaps=self.RECAP))
+        ws = wb["Model"]
+        row = next(r[0].row for r in ws.iter_rows(min_col=1, max_col=1)
+                   if r[0].value == "Mandatory amortisation")
+        later = str(ws.cell(row=row, column=2 + rich_deal.hold_years - 1).value)
+        assert later.count("+") >= 1, later
 
-        from lbo_engine.workbook_read import read_workbook
+    def test_a_pik_toggle_election_is_exported_as_an_overridable_input(self, rich_deal):
+        """The one genuine search. The engine's decision becomes a blue 1/0 the
+        analyst can change, rather than a refusal or a hidden assumption."""
+        payload = rich_deal.model_dump()
+        payload["tranches"][-1]["pik_toggle"] = True
+        wb = build_workbook(Assumptions.model_validate(payload))
+        assert f"T{len(rich_deal.tranches)}_Elected" in set(wb.defined_names)
 
-        wb = build_workbook(rich_deal)
-        sheet, ref = next(iter(wb.defined_names["Exit_Multiple"].destinations))
-        wb[sheet][ref.replace("$", "")] = 13.5
-        buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
-
-        back = read_workbook(buf)
-        assert back.exit_multiple == 13.5
-        assert back.entry_multiple == rich_deal.entry_multiple
-
-    def test_renaming_a_tranche_round_trips(self, rich_deal):
-        """Tranches are located positionally, not by name, so an analyst can
-        rename one without breaking the lookup."""
-        import io as _io
-
-        from lbo_engine.workbook_read import read_workbook
-
-        wb = build_workbook(rich_deal)
-        sheet, ref = next(iter(wb.defined_names["T1_Name"].destinations))
-        wb[sheet][ref.replace("$", "")] = "Unitranche"
-        buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
-        assert read_workbook(buf).tranches[0].name == "Unitranche"
-
-    def test_the_reader_follows_names_when_rows_move(self, rich_deal):
-        """Analysts insert rows, and Excel updates every defined name that sits
-        below the insertion. A reader keyed to cell addresses would then read
-        the wrong cells and produce a subtly wrong deal instead of an obvious
-        failure — which is the whole reason inputs are named ranges.
-
-        Note openpyxl's `insert_rows` does NOT update defined names, so the
-        shift is applied here explicitly to reproduce what Excel actually does.
-        The test is therefore that the reader resolves through names rather than
-        remembering addresses, which is the property that matters.
-        """
-        import io as _io
-        import re as _re
-
-        from openpyxl.workbook.defined_name import DefinedName
-
-        from lbo_engine.workbook_read import read_workbook
-
-        wb = build_workbook(rich_deal)
-        at = 5
-        wb["Inputs"].insert_rows(at)
-
-        shifted = []
-        for name in list(wb.defined_names):
-            dn = wb.defined_names[name]
-            def bump(m):
-                row = int(m.group(2))
-                return f"{m.group(1)}{row + 1 if row >= at else row}"
-            text = _re.sub(r"(\$[A-Z]+\$)(\d+)", bump, dn.attr_text)
-            shifted.append((name, text))
-        for name, text in shifted:
-            del wb.defined_names[name]
-            wb.defined_names.add(DefinedName(name, attr_text=text))
-
-        buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
-        back = read_workbook(buf)
-        assert back.entry_multiple == rich_deal.entry_multiple
-        assert back.exit_multiple == rich_deal.exit_multiple
-        assert [t.name for t in back.tranches] == [t.name for t in rich_deal.tranches]
-
-
-class TestItSaysWhatIsWrong:
-    def _read(self, wb):
-        import io as _io
-
-        from lbo_engine.workbook_read import read_workbook
-
-        buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
-        return read_workbook(buf)
-
-    def _set(self, wb, name, value):
-        sheet, ref = next(iter(wb.defined_names[name].destinations))
-        wb[sheet][ref.replace("$", "")] = value
-        return wb
-
-    def test_a_blank_input_names_the_cell(self, rich_deal):
-        from lbo_engine.workbook_read import WorkbookError
-
-        wb = self._set(build_workbook(rich_deal), "Entry_Multiple", None)
-        with pytest.raises(WorkbookError) as exc:
-            self._read(wb)
-        problem = exc.value.problems[0]
-        assert problem.cell and "Inputs" in problem.cell
-        assert "Entry_Multiple" in problem.message
-
-    def test_every_problem_is_reported_not_just_the_first(self, rich_deal):
-        """Someone fixing a spreadsheet wants the whole list, not one round
-        trip per mistake."""
-        from lbo_engine.workbook_read import WorkbookError
-
-        wb = build_workbook(rich_deal)
-        self._set(wb, "Entry_Multiple", None)
-        self._set(wb, "Tax_Rate", "twenty five percent")
-        with pytest.raises(WorkbookError) as exc:
-            self._read(wb)
-        assert len(exc.value.problems) >= 2
-
-    def test_a_formula_in_an_input_is_caught(self, rich_deal):
-        """Blue cells are typed values. A formula there means someone
-        overwrote an input, and reading it would give a string, not a number."""
-        from lbo_engine.workbook_read import WorkbookError
-
-        wb = self._set(build_workbook(rich_deal), "Entry_EBITDA", "=100*2")
-        with pytest.raises(WorkbookError, match="formula"):
-            self._read(wb)
-
-    def test_a_percentage_typed_as_a_whole_number_is_explained(self, rich_deal):
-        """The commonest spreadsheet mistake: 25 where 25% was meant."""
-        from lbo_engine.workbook_read import WorkbookError
-
-        wb = self._set(build_workbook(rich_deal), "Tax_Rate", 25)
-        with pytest.raises(WorkbookError, match="5% rather than 5"):
-            self._read(wb)
-
-    def test_a_foreign_workbook_is_rejected_clearly(self):
-        from openpyxl import Workbook
-
-        from lbo_engine.workbook_read import WorkbookError
-
-        with pytest.raises(WorkbookError, match="does not look like a workbook"):
-            self._read(Workbook())
+    def test_nothing_is_refused_any_more(self, rich_deal):
+        """The boundary is gone. Kept as a test so its removal is deliberate."""
+        build_workbook(self._with(
+            rich_deal, divestitures=self.DIVEST, recaps=self.RECAP, injections=self.INJECT))

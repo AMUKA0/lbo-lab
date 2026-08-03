@@ -188,15 +188,27 @@ class TestWorkbookEndpoints:
             "application/vnd.openxmlformats-officedocument")
         assert ".xlsx" in response.headers["content-disposition"]
 
-    def test_a_deal_the_workbook_cannot_model_is_refused_with_a_reason(self, deal):
-        """Silently dropping a recap would hand over a workbook that disagrees
-        with the model and gives no clue why."""
+    def test_a_recap_now_exports_rather_than_being_refused(self, deal):
+        """This used to 422. The refusal claimed recaps were decisions made by
+        search rather than by formula, which was only true of the PIK toggle —
+        and even that is now exported as an overridable input."""
         deal["recaps"] = [{"year": 2, "amount": 50.0, "target_leverage_turns": None,
                            "tranche": None, "financing_fee_pct": 0.02}]
         response = client.post("/api/model.xlsx", json={"assumptions": deal})
+        assert response.status_code == 200
+        assert response.content[:2] == b"PK"
+
+    def test_a_structure_that_breaks_says_so_rather_than_blaming_the_export(self, deal):
+        """A deal with no complete schedule has nothing to export, and the
+        reason is the deal, not the exporter."""
+        # The same over-levering the structure-failure test uses.
+        deal["tranches"][0]["leverage_turns"] = 8.0
+        deal["tranches"][0]["cash_rate"] = 0.18
+        deal["tranches"][0]["mandatory_amort_pct"] = 0.5
+        deal["revolver"]["commitment"] = 0.0
+        response = client.post("/api/model.xlsx", json={"assumptions": deal})
         assert response.status_code == 422
-        assert response.json()["detail"]["kind"] == "export_unsupported"
-        assert "recapitalisation" in response.json()["detail"]["message"]
+        assert "runs out of liquidity" in response.json()["detail"]["message"]
 
     def test_a_broken_workbook_comes_back_with_the_cells_to_fix(self, deal):
         import io as _io
