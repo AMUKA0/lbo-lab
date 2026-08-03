@@ -234,6 +234,7 @@ def build_workbook(a: Assumptions):
     put(r, "Revolver rate", a.revolver.cash_rate, "Revolver_Rate", '0.00%'); r += 1
     put(r, "Undrawn commitment fee", a.revolver.undrawn_fee, "Undrawn_Fee", '0.00%'); r += 1
     put(r, "Minimum cash ($m)", a.minimum_cash, "Minimum_Cash", '#,##0.0'); r += 1
+    put(r, "Deposit rate on cash", a.cash_deposit_rate, "Deposit_Rate", '0.00%'); r += 1
     put(r, "Cash sweep (% of excess)", a.cash_sweep_pct, "Sweep_Pct", '0.0%'); r += 2
 
     # --- mid-hold capital events, one row per year so an analyst can move an
@@ -672,9 +673,18 @@ def build_workbook(a: Assumptions):
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     rows["PIK"] = m; m += 1
 
+    # Reserved, not written: the formula points at the cash rows, which live in
+    # the waterfall below. Excel does not care about write order, only about
+    # cycles — and on the average-balance convention this one IS a cycle
+    # (income raises cash, cash raises income), resolved by the same iteration
+    # that already resolves the debt.
+    label(model, m, "Interest income on cash", 1)
+    inc_row = m; m += 1
+
     line("Pre-tax income", lambda i: (
         f"={col(i)}{rows['EBIT']}+{col(i)}{rows['CashInt']}+{col(i)}{rows['PIK']}"
-        f"+{col(i)}{rows['Financing fee amortisation']}+{col(i)}{rev_fee}"), bold=True)
+        f"+{col(i)}{rows['Financing fee amortisation']}+{col(i)}{rev_fee}"
+        f"+{col(i)}{inc_row}"), bold=True)
 
     # --- §163(j), before the NOL, because that is the order of the statute.
     # The interest sits above as a negative number; the cap works in positives,
@@ -712,7 +722,8 @@ def build_workbook(a: Assumptions):
     capacity = m
     for i in range(years):
         c = model.cell(row=m, column=2 + i, value=(
-            f"=IF(Interest_Limit_On=1,Interest_Limit_Pct*MAX({col(i)}{ati},0),"
+            f"=IF(Interest_Limit_On=1,"
+            f"{col(i)}{inc_row}+Interest_Limit_Pct*MAX({col(i)}{ati},0),"
             f"{col(i)}{bus_int}+{col(i)}{dis_open})"))
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     m += 1
@@ -837,7 +848,15 @@ def build_workbook(a: Assumptions):
         v = (f"={base}+{event_ref('Injection_Cash').format(c=col(i))}"
              if a.injections else f"={base}")
         c = model.cell(row=cash_open, column=2 + i, value=v)
-        c.font = Font(color=_GREEN if i == 0 else _BLACK); c.number_format = '#,##0.0' 
+        c.font = Font(color=_GREEN if i == 0 else _BLACK); c.number_format = '#,##0.0'
+
+    # And fill the interest-income row reserved up in the income statement,
+    # on the same balance convention the debt uses.
+    for i in range(years):
+        basis = (f"AVERAGE({col(i)}{cash_open},{col(i)}{cash_close})"
+                 if a.interest_on_average_balance else f"{col(i)}{cash_open}")
+        c = model.cell(row=inc_row, column=2 + i, value=f"=Deposit_Rate*{basis}")
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
 
     if a.divestitures:
         for tr in tranche_rows:

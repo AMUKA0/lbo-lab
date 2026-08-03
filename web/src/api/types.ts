@@ -80,6 +80,7 @@ export interface Assumptions {
   interest_limitation: InterestLimitation;
   interest_on_average_balance: boolean;
   minimum_cash: number;
+  cash_deposit_rate: number;
   cash_sweep_pct: number;
   hold_years: number;
   exit_multiple: number;
@@ -129,6 +130,7 @@ export interface YearRow {
   cash_interest_total: number;
   pik_accrual_total: number;
   revolver_undrawn_fee: number;
+  interest_income: number;
   ebt: number;
   business_interest: number;
   interest_capacity: number;

@@ -343,6 +343,19 @@ class Assumptions(BaseModel):
     interest_on_average_balance: bool = Field(default=True)
     # Cash policy
     minimum_cash: float = Field(default=0.0, ge=0, description="Operating cash floor, funded in Uses at close")
+    # Deposit rate on balance-sheet cash. Defaults to nil, which is the right
+    # default for a deal that sweeps everything — there is no cash to earn on —
+    # and the wrong one for a company hoarding it. HCA's realised column carries
+    # about $1.5bn through the back half of the hold; at 2010s rates that is
+    # tens of millions a year the model was throwing away.
+    #
+    # Era-specific and worth setting deliberately: a 2007 deal earned around 5%
+    # on deposits, a 2021 deal essentially nothing. Struck on the average of
+    # opening and closing cash, the same convention the debt uses.
+    cash_deposit_rate: float = Field(
+        default=0.0, ge=0, lt=1,
+        description="Interest earned on balance-sheet cash, on the average balance",
+    )
     cash_sweep_pct: float = Field(default=1.0, ge=0, le=1, description="% of excess FCF applied to optional prepayment")
     # Exit
     hold_years: int = Field(ge=1, le=15)

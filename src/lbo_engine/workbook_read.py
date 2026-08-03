@@ -165,7 +165,7 @@ def read_workbook(source) -> Assumptions:
         k: number(k) for k in (
             "Entry_EBITDA", "Entry_Multiple", "Entry_Revenue", "DA_Pct", "Capex_Pct",
             "NWC_Pct", "Tax_Rate", "NOL_Limit", "Revolver_Commitment", "Revolver_Rate",
-            "Undrawn_Fee", "Minimum_Cash", "Sweep_Pct", "Txn_Fee_Pct", "Fin_Fee_Pct",
+            "Undrawn_Fee", "Minimum_Cash", "Deposit_Rate", "Sweep_Pct", "Txn_Fee_Pct", "Fin_Fee_Pct",
             "Fee_Tenor", "Exit_Fee_Pct", "Exit_Multiple",
         )
     }
@@ -217,6 +217,7 @@ def read_workbook(source) -> Assumptions:
             nol_limit_pct=fields["NOL_Limit"],
             interest_limitation=limitation,
             minimum_cash=fields["Minimum_Cash"],
+            cash_deposit_rate=fields["Deposit_Rate"],
             cash_sweep_pct=fields["Sweep_Pct"],
             hold_years=int(hold),
             exit_multiple=fields["Exit_Multiple"],

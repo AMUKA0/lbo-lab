@@ -82,6 +82,10 @@ class YearRow:
     cash_interest_total: float
     pik_accrual_total: float
     revolver_undrawn_fee: float
+    # Earned on balance-sheet cash. A separate line from interest paid, because
+    # §163(j) treats it separately: it adds to the deductible capacity rather
+    # than netting against the expense.
+    interest_income: float
     ebt: float
     # §163(j). `business_interest` is what the section reaches — cash coupon,
     # PIK accrual and fee amortisation, but not the undrawn commitment fee.
@@ -504,6 +508,7 @@ def _solve_year_with(
         t.name: _rates(t, elected)[0] * tranche_opening[t.name] for t in a.tranches
     }
     revolver_interest = a.revolver.cash_rate * revolver_opening
+    interest_income = a.cash_deposit_rate * opening_cash
 
     if not a.interest_on_average_balance:
         # Circularity breaker: interest on opening balances only. Acyclic, so
@@ -512,7 +517,7 @@ def _solve_year_with(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening, interest_cf_opening, cash_interest, revolver_interest,
-            elected,
+            interest_income, elected,
         )
         row.interest_iterations = 1
         return row
@@ -524,9 +529,13 @@ def _solve_year_with(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening, interest_cf_opening, cash_interest, revolver_interest,
-            elected,
+            interest_income, elected,
         )
         # Recompute interest on average balances given the resulting closings.
+        # Cash is inside the same circularity as the debt: income raises cash,
+        # which raises income. One more term in the same fixed point, not a
+        # second solve.
+        interest_income = a.cash_deposit_rate * 0.5 * (opening_cash + row.closing_cash)
         cash_interest = {
             t.name: _rates(t, elected)[0]
             * 0.5
@@ -535,7 +544,7 @@ def _solve_year_with(
         }
         revolver_interest = a.revolver.cash_rate * 0.5 * (revolver_opening + row.revolver_closing)
 
-        total = sum(cash_interest.values()) + revolver_interest
+        total = sum(cash_interest.values()) + revolver_interest - interest_income
         if abs(total - prev_total_interest) < _TOLERANCE:
             row.interest_iterations = iteration
             break
@@ -565,6 +574,7 @@ def _build_year(
     interest_cf_opening: float,
     cash_interest: dict[str, float],
     revolver_interest: float,
+    interest_income: float,
     elected: frozenset[str] = frozenset(),
 ) -> YearRow:
     """One pass of the year's income statement, cash flow and debt waterfall
@@ -580,7 +590,7 @@ def _build_year(
 
     # Income statement. Financing-fee amortisation and PIK are expenses of the
     # period whether or not tax allows them this year.
-    ebt = ebit - cash_interest_total - pik_total - fee_amort - undrawn_fee
+    ebt = ebit + interest_income - cash_interest_total - pik_total - fee_amort - undrawn_fee
 
     # --- §163(j): cap the interest DEDUCTION, not the interest ---------------
     # Fee amortisation is inside the cap because it is OID, which is interest.
@@ -593,7 +603,10 @@ def _build_year(
         # ATI is struck before interest and before any NOL. The EBITDA basis
         # applied to years beginning before 2022; EBIT is current law.
         ati = ebit - undrawn_fee + (da if lim.ati_basis == "ebitda" else 0.0)
-        interest_capacity = lim.pct_of_ati * max(ati, 0.0)
+        # Business interest INCOME is added to the cap, not netted off ATI:
+        # a company with deposits gets a dollar of extra capacity per dollar
+        # earned, which is why cash-rich borrowers are less often limited.
+        interest_capacity = interest_income + lim.pct_of_ati * max(ati, 0.0)
         interest_deducted = min(subject, interest_capacity)
     else:
         # No cap: everything is deducted, and the reported capacity is the
@@ -691,6 +704,7 @@ def _build_year(
         cash_interest_total=cash_interest_total,
         pik_accrual_total=pik_total,
         revolver_undrawn_fee=undrawn_fee,
+        interest_income=interest_income,
         ebt=ebt,
         business_interest=business_interest,
         interest_capacity=interest_capacity,

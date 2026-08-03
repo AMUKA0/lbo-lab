@@ -307,6 +307,14 @@ HILTON = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0435,  # 2007 average, the year it signed
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -341,6 +349,14 @@ HILTON = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0047,  # 2008-18 average — near zero for a decade
         minimum_cash=300.0,
         cash_sweep_pct=0.75,
         # April 2010, modelled as reported: roughly $2bn of Hilton's own debt
@@ -571,6 +587,14 @@ HCA = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0473,  # 2006 average, the year it signed
         minimum_cash=400.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -604,6 +628,14 @@ HCA = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0121,  # 2007-11 average; the collapse is why $1.5bn of idle cash earned so little
         minimum_cash=400.0,
         # HCA did not sweep. Free cash flow went to capex and, from 2010, to
         # dividend recapitalisations — reported debt was still $28.2bn in 2010
@@ -814,6 +846,14 @@ TXU = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0435,  # 2007 average, the year it signed
         minimum_cash=1000.0,
         cash_sweep_pct=0.75,
         hold_years=5,
@@ -852,6 +892,14 @@ TXU = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0027,  # 2008-14 average — effectively nil
         minimum_cash=1000.0,
         cash_sweep_pct=0.75,
         hold_years=7,
@@ -1093,6 +1141,14 @@ RJR = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0667,  # 1988 average, the year it was signed
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
         # The divestitures were agreed at or shortly after close and were the
@@ -1151,6 +1207,14 @@ RJR = CaseStudy(
         exit_fee_pct_ev=0.010,
         nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
         interest_limitation=_pre_tcja(),
+        # Deposit rate on idle cash. The underwriting column carries the rate
+        # prevailing when the deal was signed, because that is what an
+        # underwriter would have assumed; the realised column carries the
+        # average actually earned over the hold. The gap between the two is one
+        # of the cleanest no-hindsight distinctions in the library — nobody in
+        # 2006 was modelling five years of zero rates.
+        # 3-month T-bill, annual averages, FRED series TB3MS.
+        cash_deposit_rate=0.0528,  # 1989-94 average, through the rate collapse of the early 90s
         minimum_cash=500.0,
         cash_sweep_pct=1.0,
         injections=[
@@ -1267,8 +1331,8 @@ RJR = CaseStudy(
     break_notes=[
         BreakNote(
             column="underwriting",
-            year=4,
-            calendar="1992",
+            year=5,
+            calendar="1993",
             headline="The plan does not finance itself",
             what_happened=(
                 "Nothing, in the sense the other break notes mean it — no external shock "
@@ -1283,14 +1347,18 @@ RJR = CaseStudy(
                 "that the disposals have shrunk to about $2.6bn. Net debt rises through "
                 "the hold rather than falling, because 15% accretion on the preferred "
                 "strip outruns what operations can repay. The $5.1bn of sale proceeds "
-                "buys two years and no more."
+                "buys three years and no more — and one of those three is bought by "
+                "deposit interest rather than by the business: at the 6.7% short rates "
+                "of 1988 the cash pile between disposals and debt service earned real "
+                "money, which is the sort of thing a model that assumes cash yields "
+                "nothing quietly gets wrong in the issuer's favour."
             ),
             what_the_engine_cannot_see=(
                 "Follow-on capital beyond the single injection it models — the new bank "
                 "debt raised with the 1990 recapitalisation, the reset-driven refinancing, "
                 "the later amendments. The break should be read as 'this structure was "
                 "never self-financing', which is true and was true, rather than as a "
-                "prediction that RJR collapsed in 1992. It did not; it was repeatedly "
+                "prediction that RJR collapsed in 1993. It did not; it was repeatedly "
                 "rescued, and the equity still earned nothing."
             ),
         ),

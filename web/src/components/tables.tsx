@@ -169,6 +169,7 @@ export function ScheduleTable({ run }: { run: RunResult }) {
     { label: "PIK accrual", get: (y) => -y.pik_accrual_total },
     { label: "Financing-fee amortisation", get: (y) => -y.fee_amortisation },
     { label: "Undrawn commitment fee", get: (y) => -y.revolver_undrawn_fee },
+    { label: "Interest income on cash", get: (y) => y.interest_income },
     { label: "Pre-tax income", get: (y) => y.ebt, emphasis: true },
   ];
 

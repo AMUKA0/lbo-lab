@@ -64,6 +64,7 @@ class YearOut(BaseModel):
     cash_interest_total: float
     pik_accrual_total: float
     revolver_undrawn_fee: float
+    interest_income: float
     ebt: float
     # §163(j): interest the cap refused this year, and the running balance of
     # interest waiting for capacity. Both zero when the cap is switched off.
@@ -224,6 +225,7 @@ def year_out(y: YearRow) -> YearOut:
         cash_interest_total=y.cash_interest_total,
         pik_accrual_total=y.pik_accrual_total,
         revolver_undrawn_fee=y.revolver_undrawn_fee,
+        interest_income=y.interest_income,
         ebt=y.ebt,
         business_interest=y.business_interest,
         interest_capacity=y.interest_capacity,

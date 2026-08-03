@@ -166,6 +166,26 @@ class TestTheInterestLimitation:
                 year.taxes, abs=1e-4), f"year {year.year} tax"
 
 
+class TestInterestOnCash:
+    def test_the_income_row_agrees_with_the_engine(self, rich_deal):
+        """Written into the sheet ABOVE the cash rows it depends on, so this is
+        also a check that the forward reference resolves."""
+        deal = _acyclic(rich_deal)
+        deal.cash_sweep_pct = 0.0  # keep a balance to earn on
+        deal.cash_deposit_rate = 0.04
+        value, row, _ = _recalculate(_write(deal, "deposits.xlsx"))
+        result = run_lbo(deal)
+
+        for i, year in enumerate(result.years):
+            c = chr(ord("B") + i)
+            assert year.interest_income > 0
+            assert value("Model", f"{c}{row('Model', 'Interest income on cash')}") == (
+                pytest.approx(year.interest_income, abs=1e-4)), f"year {year.year}"
+            # And it must reach the cap, not just the P&L.
+            assert value("Model", f"{c}{row('Model', 'Deductible capacity')}") == (
+                pytest.approx(year.interest_capacity, abs=1e-4)), f"year {year.year} cap"
+
+
 class TestTheCircularity:
     def test_iteration_is_enabled_when_interest_is_circular(self, rich_deal):
         """Without this the workbook opens to a wall of circular-reference

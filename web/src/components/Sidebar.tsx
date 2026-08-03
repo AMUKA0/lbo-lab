@@ -467,6 +467,16 @@ export function Sidebar({
 
       {/* ------------------------------------------------------- conventions */}
       <Group title="Modelling conventions">
+        <SliderField
+          label="Deposit rate on cash"
+          value={a.cash_deposit_rate}
+          min={0}
+          max={0.08}
+          step={0.0025}
+          format={(v) => fmtPct(v, 2)}
+          onChange={(v) => edit((n) => (n.cash_deposit_rate = v))}
+          note="Earned on the average cash balance. Nil is right for a deal that sweeps everything and wrong for one hoarding cash — and it is era-specific: a 2007 deal earned around 5% on deposits, a 2021 deal essentially nothing."
+        />
         <ToggleField
           label="Interest on average balances"
           checked={a.interest_on_average_balance}
