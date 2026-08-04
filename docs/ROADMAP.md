@@ -3,7 +3,7 @@
 What is planned, what is deliberately not, and the reasoning behind both. Kept
 because a decision without its reasoning gets re-litigated or silently reversed.
 
-Current state: **308 tests**, deployed on Cloud Run, source public.
+Current state: **331 tests**, deployed on Cloud Run, source public.
 
 ---
 
@@ -21,6 +21,15 @@ happened, against the reported outcome.
 
 **Excel, phases 1 and 2.** A live formula-driven workbook, tested against the
 engine by independent recalculation; and the round trip back in via named ranges.
+
+**Dollar General 2007, as the fifth case and a simulator preset.** Signed three
+weeks before TXU closed, on the same kind of paper, with the same PIK toggle —
+and it returned several times its money. Closes the selection-bias finding with
+a case rather than more prose: the library now contains a peak-vintage success,
+a non-mega deal, and a toggle that appears on both sides of the outcome. Its
+entry multiple is 9.7× or 16.3× depending on which year's EBITDA you divide by,
+which is the cleanest illustration in the library of why a historic multiple
+quoted without its denominator is worth nothing.
 
 **A forward-looking PIK election.** The toggle is no longer a last resort fired
 once the revolver is already exhausted. `pik_election_headroom` makes the
@@ -108,10 +117,6 @@ not feature-complete. Three things separate the current state from that:
 Two independent reviews found real errors; most were fixed (see git history).
 These were not:
 
-- **Selection bias in the library.** Four famous deals, three peak-vintage. Named
-  in the README, but as a footnote when it is arguably the dominant limitation. A
-  clean fifth case (Dollar General 2007 is the obvious candidate — same vintage,
-  sane multiple, clean outcome) would fix it better than more prose.
 
 ---
 

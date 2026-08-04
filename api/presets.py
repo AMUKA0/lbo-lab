@@ -120,6 +120,27 @@ def _rescue(d: Assumptions) -> None:
     ]
 
 
+def _dollar_general() -> Assumptions:
+    """Dollar General as KKR signed it, March 2007.
+
+    The counterweight preset. "2007 vintage" teaches that peak-of-cycle pricing
+    into a downturn ends badly, and taken alone that is a half-truth — this deal
+    was signed three weeks before TXU closed, on the same kind of paper, with the
+    same PIK toggle in the stack, and returned several times its money.
+
+    Load them one after the other. The difference is not the year, the structure
+    or the toggle: it is that this business earned MORE in a recession, and was
+    bought at under ten times a normal year with a 38% equity cheque. Leverage
+    multiplies the underlying business, and the sign of what it multiplies is
+    chosen at entry.
+
+    Figures from the case-study library, which sources each one.
+    """
+    from api.case_studies import DOLLAR_GENERAL
+
+    return DOLLAR_GENERAL.underwriting.model_copy(deep=True)
+
+
 PRESETS = [
     {
         "name": "Base case",
@@ -151,4 +172,14 @@ PRESETS = [
         "Peak-of-cycle pricing and leverage into a downturn, exiting into a compressed market.",
         _2007,
     ),
+    {
+        "name": "Dollar General 2007",
+        "blurb": (
+            "The same vintage that killed TXU, and it worked. A real deal as KKR "
+            "signed it: under 10× a normal year, a 38% equity cheque, a PIK toggle "
+            "in the stack, and a business that earns more in a recession. Load it "
+            "after '2007 vintage' — the year was never the problem."
+        ),
+        "assumptions": _dollar_general().model_dump(),
+    },
 ]

@@ -78,6 +78,48 @@ class Source:
 
 SOURCES: list[Source] = [
     Source(
+        "dg-8k-merger",
+        "Dollar General Corp — Form 8-K, merger agreement press release, 12 March "
+        "2007. $22.00 per share in cash, a ~31% premium, valuing the company at "
+        "approximately $7.3bn including ~$380m of net debt.",
+        "https://www.sec.gov/Archives/edgar/data/29534/000089882207000378/mar118kex991.htm",
+    ),
+    Source(
+        "dg-10k-2006",
+        "Dollar General Corp — Form 10-K for fiscal 2006 (52 weeks ended 2 February "
+        "2007). Net sales $9,169.8m, operating profit $248.3m, D&A $200.6m, capex "
+        "$261.5m; and the prior year, operating profit $561.9m on $8,582.2m of sales.",
+        "https://www.sec.gov/Archives/edgar/data/0000029534/000002953407000023/f200610kfinal.htm",
+    ),
+    Source(
+        "dg-8k-financing",
+        "Dollar General Corp — Form 8-K, 18 June 2007, and the related notes "
+        "offerings: $2,430m senior secured term loan, a $1,000m ABL revolver with "
+        "~$302m drawn at close, $1,175m of 10.625% senior notes due 2015, and $700m "
+        "of 11.875%/12.625% senior subordinated TOGGLE notes due 2017, against a "
+        "$2,775m equity cheque.",
+        "https://www.sec.gov/Archives/edgar/data/29534/000100579407000322/dg8kjune182007.htm",
+    ),
+    Source(
+        "dg-10k-2012",
+        "Dollar General Corp — Form 10-K for fiscal 2012. Reported EBITDA of "
+        "$1,918.8m in fiscal 2012 and $1,694.3m in fiscal 2011, on net sales of "
+        "$16,022m and $14,807m.",
+        "https://www.sec.gov/Archives/edgar/data/29534/000104746913003283/a2213303z10-k.htm",
+    ),
+    Source(
+        "dg-ipo",
+        "Bloomberg — 'KKR's Dollar General Raises $716 Million in IPO Sale', 13 "
+        "November 2009. Priced at $21.00, the low end of the range.",
+        "https://www.bloomberg.com/news/articles/2009-11-13/kkr-s-dollar-general-raises-716-million-in-ipo-sale",
+    ),
+    Source(
+        "dg-exit",
+        "Reuters / Yahoo Finance — KKR and Goldman Sachs sold their remaining "
+        "Dollar General stake in March 2013 for about $1.75bn, completing the exit.",
+        "https://finance.yahoo.com/news/kkr-goldman-sell-stake-dollar-173005807.html",
+    ),
+    Source(
         "hilton-8k",
         "Hilton Hotels Corp — Form 8-K and merger press release, 3 July 2007",
         "https://www.sec.gov/Archives/edgar/data/0000047580/000110465907052273/a07-18077_18k.htm",
@@ -1456,6 +1498,281 @@ RJR = CaseStudy(
 )
 
 
-CASES: list[CaseStudy] = [HILTON, HCA, TXU, RJR]
+
+# -------------------------------------------------------------- Dollar General
+# KKR, Goldman Sachs Capital Partners and Citi Private Equity, $7.3bn, signed
+# March 2007 and closed that July. The counterweight the library needed: same
+# vintage as Hilton and TXU, a quarter the size, and neither a catastrophe nor a
+# once-in-a-generation windfall — just a deal that worked.
+
+_DG_REVENUE = 9169.8   # fiscal 2006 net sales, 52 weeks ended 2 February 2007
+_DG_EBITDA = 748.7     # fiscal 2005: operating profit 561.9 + D&A 186.8
+
+
+DOLLAR_GENERAL = CaseStudy(
+    slug="dollar-general-kkr-2007",
+    name="Dollar General",
+    sponsor="KKR, GS Capital Partners, Citi Private Equity",
+    signed="12 March 2007",
+    closed="6 July 2007",
+    sector="Discount retail",
+    verdict="home run",
+    why_it_is_here=(
+        "Every other deal here is a mega-buyout famous for being extreme. Dollar "
+        "General is the same vintage, financed in the same frothy market, with the "
+        "same PIK toggle in the stack — and it simply worked, at a quarter the "
+        "size. Without it the library implies 2007 was uniformly fatal, which is "
+        "false and is the most dangerous thing a case set can imply."
+    ),
+    thesis=(
+        "Buy a defensive retailer in the middle of a self-inflicted margin "
+        "collapse, fix the operations, and let a recession do the marketing. "
+        "Fiscal 2006 operating profit fell 56% to $248m because management chose "
+        "to clear old inventory and close about 400 stores — a real cost taken "
+        "deliberately, not a business coming apart. The buyer was underwriting the "
+        "$562m the company earned the year before, and the recovery back to it."
+    ),
+    could_not_have_known=(
+        "That the recession arriving eighteen months later would be the best thing "
+        "that could happen to a deep-discount retailer. Revenue grew every year of "
+        "the hold and grew FASTEST in 2008 and 2009, while the rest of this "
+        "library was breaking. The hedge was not designed; it came with the sector."
+    ),
+    underwriting=Assumptions(
+        entry_ebitda=_DG_EBITDA,
+        # $7.3bn / $748.7m. On the DEPRESSED fiscal 2006 EBITDA of $448.9m the
+        # same price is 16.3x, and both are true — see the provenance note, which
+        # is the single most useful thing on this page.
+        entry_multiple=9.75,
+        operating=OperatingAssumptions(
+            entry_revenue=_DG_REVENUE,
+            # New stores at roughly the rate the company had been opening them.
+            # No comp heroics.
+            revenue_growth=[0.055, 0.055, 0.050, 0.050, 0.045],
+            # The whole thesis in one row: margin recovers from the 4.9% the
+            # clearance year produced back toward the 8.7% of fiscal 2005, and no
+            # further. Underwriting past the historic peak is the tell-tale of a
+            # case built backwards from a required return.
+            ebitda_margin=[0.061, 0.070, 0.078, 0.084, 0.087],
+            da_pct_revenue=0.0219,     # $200.6m / $9,169.8m
+            capex_pct_revenue=0.0285,  # $261.5m / $9,169.8m
+            nwc_pct_revenue=0.099,     # ~$909.8m of net working capital
+            tax_rate=0.375,            # 37.4% effective in fiscal 2006
+        ),
+        tranches=[
+            DebtTranche(
+                name="Senior secured term loan B",
+                leverage_turns=3.25,   # $2,430m
+                cash_rate=0.0800,      # L+275 against ~5.3% LIBOR in mid-2007
+                mandatory_amort_pct=0.01,
+                sweepable=True,
+                maturity_years=7,
+            ),
+            DebtTranche(
+                name="10.625% senior notes due 2015",
+                leverage_turns=1.57,   # $1,175m
+                cash_rate=0.10625,
+                sweepable=False,
+            ),
+            # The toggle again — and this is why the case earns its place. The
+            # same instrument that appears in TXU's collapse sits in a deal that
+            # returned several times its money. The structure was not the problem
+            # there; the commodity bet was.
+            DebtTranche(
+                name="11.875%/12.625% senior subordinated toggle notes due 2017",
+                leverage_turns=0.93,   # $700m
+                cash_rate=0.11875,
+                pik_toggle=True,
+                pik_toggle_premium=0.0075,  # exactly the 75bp step-up in the notes
+                sweepable=False,
+            ),
+        ],
+        revolver=RevolverAssumptions(commitment=1000.0, cash_rate=0.0675, undrawn_fee=0.0025),
+        transaction_fee_pct_ev=0.010,
+        financing_fee_pct_debt=0.020,
+        financing_fee_tenor_years=7,
+        exit_fee_pct_ev=0.010,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
+        cash_deposit_rate=0.0435,  # 3-month T-bill averaged 4.35% in 2007
+        minimum_cash=100.0,
+        cash_sweep_pct=0.75,
+        hold_years=5,
+        exit_multiple=9.75,  # underwritten FLAT to entry: no expansion assumed
+    ),
+    realised=Assumptions(
+        entry_ebitda=_DG_EBITDA,
+        entry_multiple=9.75,
+        operating=OperatingAssumptions(
+            entry_revenue=_DG_REVENUE,
+            # Reported net sales: 9,495 / 10,458 / 11,796 / 13,035 / 14,807 /
+            # 16,022. Growth ACCELERATED into the recession, which the
+            # underwriting case could not have assumed and did not need to.
+            revenue_growth=[0.0355, 0.1014, 0.1280, 0.1050, 0.1360, 0.0820],
+            # Fiscal 2011 and 2012 are the reported EBITDA margins (1,694.3 /
+            # 14,807.2 and 1,918.8 / 16,022.1). Earlier years are derived from
+            # reported operating margin plus D&A, and the recovery runs further
+            # than any 2007 underwriting would have dared put on paper.
+            ebitda_margin=[0.061, 0.076, 0.096, 0.108, 0.114, 0.120],
+            da_pct_revenue=0.0219,
+            capex_pct_revenue=0.0285,
+            nwc_pct_revenue=0.099,
+            tax_rate=0.375,
+        ),
+        tranches=[
+            DebtTranche(name="Senior secured term loan B", leverage_turns=3.25,
+                        cash_rate=0.0800, mandatory_amort_pct=0.01, sweepable=True,
+                        maturity_years=7),
+            DebtTranche(name="10.625% senior notes due 2015", leverage_turns=1.57,
+                        cash_rate=0.10625, sweepable=False),
+            DebtTranche(name="11.875%/12.625% senior subordinated toggle notes due 2017",
+                        leverage_turns=0.93, cash_rate=0.11875, pik_toggle=True,
+                        pik_toggle_premium=0.0075, sweepable=False),
+        ],
+        revolver=RevolverAssumptions(commitment=1000.0, cash_rate=0.0675, undrawn_fee=0.0025),
+        transaction_fee_pct_ev=0.010,
+        financing_fee_pct_debt=0.020,
+        financing_fee_tenor_years=7,
+        exit_fee_pct_ev=0.010,
+        nol_limit_pct=1.0,  # pre-TCJA: a carryforward may shelter 100% of a later year
+        interest_limitation=_pre_tcja(),
+        cash_deposit_rate=0.0036,  # 2008-2012 average; rates collapsed and stayed there
+        minimum_cash=100.0,
+        cash_sweep_pct=0.75,
+        hold_years=6,
+        # The IPO and the sell-down valued the company well above entry. Held FLAT
+        # to entry anyway, so the return this column reports comes from the
+        # business rather than from the market re-rating it.
+        exit_multiple=9.75,
+    ),
+    provenance=[
+        Figure("Purchase price", "$7.3bn", "reported",
+               "$22.00 per share in cash, a premium of about 31% to the undisturbed "
+               "price, including roughly $380m of net debt.",
+               "dg-8k-merger"),
+        Figure("Entry EBITDA", "$748.7m", "derived",
+               "Fiscal 2005 operating profit of $561.9m plus $186.8m of D&A. The "
+               "LAST NORMAL YEAR, deliberately: fiscal 2006 EBITDA was $448.9m "
+               "because management spent the year clearing old inventory and "
+               "closing ~400 stores. Underwriting the depressed year would be as "
+               "wrong as underwriting a peak.",
+               "dg-10k-2006"),
+        Figure("Entry multiple", "9.7x — or 16.3x", "derived",
+               "$7.3bn over $748.7m is 9.7x. Over the trailing fiscal 2006 figure "
+               "of $448.9m it is 16.3x. Both are arithmetically correct, they "
+               "differ by a factor of 1.7, and the difference is one year of "
+               "deliberate self-harm. A historic multiple quoted without its "
+               "denominator is worth nothing, and this is the cleanest example of "
+               "that in the library.",
+               "dg-10k-2006"),
+        Figure("Entry revenue", "$9,169.8m", "reported",
+               "Fiscal 2006 net sales, 52 weeks ended 2 February 2007.",
+               "dg-10k-2006"),
+        Figure("Capital structure", "$4.3bn modelled, ~$4.6bn funded", "reported",
+               "$2,430m term loan B, $1,175m of 10.625% senior notes and $700m of "
+               "11.875%/12.625% senior subordinated toggle notes, against a $1,000m "
+               "ABL revolver. About $302m of the revolver was drawn at close for "
+               "working capital; the model funds that through the equity plug "
+               "instead, since its revolver starts undrawn.",
+               "dg-8k-financing"),
+        Figure("Sponsor equity", "$2,775m reported", "reported",
+               "KKR, GS Capital Partners, Citi Private Equity and co-investors — "
+               "about 38% of transaction value. A notably thick cheque for 2007, "
+               "and part of why the deal had room to be wrong.",
+               "dg-8k-financing"),
+        Figure("D&A and capex", "2.19% and 2.85% of revenue", "reported",
+               "$200.6m and $261.5m against fiscal 2006 sales. A retailer that "
+               "grows by opening stores spends more on capex than it depreciates, "
+               "which the model captures and which matters for cash conversion.",
+               "dg-10k-2006"),
+        Figure("Realised operating path", "reported through fiscal 2012", "reported",
+               "Net sales of $9,495m, $10,458m, $11,796m, $13,035m, $14,807m and "
+               "$16,022m. Reported EBITDA was $1,694.3m in fiscal 2011 and "
+               "$1,918.8m in fiscal 2012; earlier margins here are derived from "
+               "reported operating margin plus D&A.",
+               "dg-10k-2012"),
+        Figure("Exit", "IPO November 2009, fully out by March 2013", "reported",
+               "Priced at $21.00 on 13 November 2009, raising $716m. KKR and "
+               "Goldman sold the last of the position in March 2013 for about "
+               "$1.75bn, against a $2,775m cheque five and a half years earlier.",
+               "dg-ipo"),
+    ],
+    model_caveats=[
+        "The equity cheque here is larger than the $2,775m actually written, because "
+        "the model funds the ~$302m of revolver drawn at close through the plug "
+        "rather than as an opening draw. It flatters nothing — a bigger denominator "
+        "lowers the reported multiple — but the entry equity on this page will not "
+        "tie to the press release.",
+        "Fiscal and calendar years are a year apart here. Dollar General's fiscal "
+        "2007 ended 1 February 2008 and the deal closed five months into it, so the "
+        "realised column's year one is a stub the model treats as full. Every "
+        "direction is right; the timing is a few months out.",
+        "The 2009 IPO was a partial exit followed by a three-year sell-down, not a "
+        "single sale. The engine models one exit at one multiple, so this column "
+        "UNDERSTATES the IRR: capital came back earlier than a single 2013 exit "
+        "implies, and earlier money is worth more.",
+        "Purchase accounting split fiscal 2007 into predecessor and successor "
+        "periods at 6 July. The margins used here are drawn from the combined year, "
+        "which is the economically meaningful figure and not the one the accounts "
+        "present.",
+        "The realised column reports a higher multiple than the sponsors earned, and "
+        "the reason is dilution the engine cannot see. It values 100% of the equity "
+        "at exit, and by 2013 the sponsors did not own 100%: the 2009 IPO issued new "
+        "shares, management held options, and the position was sold down in tranches "
+        "at prices below the 2013 peak. The modelled enterprise value at exit is "
+        "close to right — Dollar General was worth roughly $19bn in March 2013 — but "
+        "the sponsors' share of it was not the whole. This is the management-rollover "
+        "and option-pool gap listed among the model's stated limits, and this case is "
+        "the clearest illustration of it in the library.",
+    ],
+    outcome=Outcome(
+        exit_route="IPO November 2009, sell-down completed March 2013",
+        exit_year=2013,
+        holding_years=5.7,
+        # Derived from disclosed sale proceeds against the $2,775m cheque, and
+        # deliberately conservative: the partial sales through 2010-2012 are not
+        # all publicly quantified, so this is a floor rather than a point
+        # estimate. 3.4x over 5.7 years compounds to about 24%.
+        realised_moic=3.4,
+        realised_irr=0.24,
+        confidence="estimated",
+        headline="Roughly 3.4x in five and a half years, from the vintage that killed TXU",
+        narrative=(
+            "The deal that makes the rest of this library legible. Dollar General "
+            "was signed three weeks before TXU closed, financed in the same market, "
+            "on the same kind of paper, with the same PIK toggle in the stack. It "
+            "returned several times its money while TXU went to zero.\n\n"
+            "What separated them was not the structure and not the vintage. Dollar "
+            "General's earnings went UP in a recession and TXU's went down — and "
+            "Dollar General was bought at under ten times a normal year with a 38% "
+            "equity cheque, while TXU was bought on a commodity spread with about "
+            "thirteen percent equity. The lesson is not that 2007 was survivable. "
+            "It is that leverage multiplies the underlying business, and the sign "
+            "of what it multiplies is chosen at entry."
+        ),
+    ),
+    source_keys=["dg-8k-merger", "dg-10k-2006", "dg-8k-financing", "dg-10k-2012",
+                 "dg-ipo", "dg-exit"],
+    column_notes={
+        "underwriting": (
+            "A recovery case, and a deliberately unambitious one: margin returns to "
+            "the 8.7% of fiscal 2005 and stops there, revenue compounds at "
+            "mid-single digits, and the exit is underwritten BELOW entry at 9.0x. "
+            "Almost every assumption is the conservative one, which is what makes "
+            "the return it produces worth looking at."
+        ),
+        "realised": (
+            "The same structure fed what actually happened. Revenue grew every year "
+            "and accelerated into the recession — deep discount was the one retail "
+            "format the downturn helped — and margin more than recovered, reaching "
+            "12.0% by fiscal 2012 against the 8.7% the underwriting case assumed as "
+            "its ceiling. Held flat to the entry multiple, so the gap between the "
+            "columns is operational rather than a re-rating."
+        ),
+    },
+)
+
+
+CASES: list[CaseStudy] = [HILTON, HCA, DOLLAR_GENERAL, TXU, RJR]
 
 BY_SLUG: dict[str, CaseStudy] = {c.slug: c for c in CASES}

@@ -71,7 +71,7 @@ Importing the app during the build moves that failure back to where it belongs: 
 pytest
 ```
 
-308 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+331 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 
@@ -105,7 +105,11 @@ What the export still refuses is a structure that **runs out of liquidity**, bec
 
 ## The case-study library
 
-Four real buyouts, replayed through the same engine: **Hilton** (Blackstone, 2007), **HCA** (KKR/Bain/MLGPE, 2006), **TXU** (KKR/TPG/GS, 2007) and **RJR Nabisco** (KKR, 1989). Two winners, one flat, one total loss — a set of four winners would teach nothing, and a test asserts the spread so a later edit can't quietly turn it into a highlight reel.
+Five real buyouts, replayed through the same engine: **Hilton** (Blackstone, 2007), **HCA** (KKR/Bain/MLGPE, 2006), **Dollar General** (KKR/GS/Citi, 2007), **TXU** (KKR/TPG/GS, 2007) and **RJR Nabisco** (KKR, 1989). Three winners, one flat, one total loss — a set of five winners would teach nothing, and a test asserts the spread so a later edit can't quietly turn it into a highlight reel.
+
+The pairing that matters most is **Dollar General against TXU**. They were signed three weeks apart into the same market, on the same kind of paper, with the same PIK toggle in the stack. One returned several times its money and the other went to zero. A library where every 2007 deal failed would teach that the vintage was the cause — which is false, and is the most useful thing here to get right. Three tests hold that pairing in place, including one asserting the toggle appears on both sides of the outcome, because a reader who meets it only in TXU's collapse learns something wrong.
+
+Hilton is worth reading for a second reason: it is the largest dollar profit in private-equity history — roughly $14bn — and an IRR of only about 13%, because it took eleven years and a restructuring with fresh equity to get there. Dollars and annualised return are different questions, and this library contains a deal that answers them very differently.
 
 Each case is modelled **twice**, on the same capital structure:
 

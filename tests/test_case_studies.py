@@ -386,3 +386,43 @@ def test_caveats_do_not_deny_mechanics_the_engine_now_has(case):
             assert not (used and hint in window), (
                 f"{case.slug}: {phrase!r} sits beside {hint!r}, which this case uses"
             )
+
+
+class TestTheLibraryIsNotAHighlightReel:
+    """Selection bias was the review's sharpest finding about this library, and
+    the fix is a case rather than more prose. These pin what Dollar General is
+    for, so a later edit cannot quietly remove the point of it."""
+
+    def test_the_outcomes_still_spread(self):
+        verdicts = {c.verdict for c in CASES}
+        assert {"home run", "wipeout"} <= verdicts, verdicts
+        assert "flat" in verdicts, "a set with no disappointment teaches nothing"
+
+    def test_the_2007_vintage_contains_both_a_disaster_and_a_success(self):
+        """The load-bearing pair. Three of these deals were signed within months
+        of each other into the same market on the same kind of paper — and the
+        outcomes run from total loss to several times money. A library where
+        every peak-vintage deal failed would teach that the year was the cause,
+        which is both false and the most useful thing to get right."""
+        vintage = [c for c in CASES if "2007" in c.signed or "2007" in c.closed]
+        assert len(vintage) >= 3, [c.slug for c in vintage]
+        verdicts = {c.verdict for c in vintage}
+        assert "wipeout" in verdicts and "home run" in verdicts, verdicts
+
+    def test_the_toggle_appears_on_both_sides_of_the_outcome(self):
+        """The PIK toggle is not a distress signal. It sits in TXU's collapse and
+        in Dollar General's success, and a reader who learns it only from the
+        former learns something wrong."""
+        with_toggle = [
+            c for c in CASES
+            if any(t.pik_toggle for t in c.underwriting.tranches)
+        ]
+        verdicts = {c.verdict for c in with_toggle}
+        assert len(with_toggle) >= 2, [c.slug for c in with_toggle]
+        assert "wipeout" in verdicts and "home run" in verdicts, verdicts
+
+    def test_not_every_deal_is_a_mega_buyout(self):
+        """Four deals of $26-45bn is a library about a specific kind of deal, not
+        about buyouts. Dollar General at $7.3bn is a quarter the size."""
+        entry_evs = sorted(c.underwriting.entry_ev for c in CASES)
+        assert entry_evs[0] < 0.4 * entry_evs[-1], entry_evs
