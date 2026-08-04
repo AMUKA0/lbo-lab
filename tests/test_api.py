@@ -284,3 +284,36 @@ class TestWorkbookEndpoints:
             "/api/import.xlsx", files={"file": ("cv.pdf", b"%PDF-1.4 not a workbook", _XLSX)})
         assert response.status_code == 422
         assert "could not be opened" in response.json()["detail"]["message"]
+
+
+class TestCaseWorkbookEndpoint:
+    """Downloading a case study as a live model — the strongest artefact here,
+    and the one most likely to be forwarded to someone who never saw the site."""
+
+    def test_every_column_downloads(self):
+        from api.case_studies import CASES
+
+        for case in CASES:
+            for column in ("underwriting", "realised"):
+                if getattr(case, column) is None:
+                    continue
+                r = client.get(f"/api/cases/{case.slug}/{column}.xlsx")
+                assert r.status_code == 200, f"{case.slug}/{column}"
+                assert r.content[:2] == b"PK"
+                assert f"{case.slug}-{column}.xlsx" in r.headers["content-disposition"]
+
+    def test_a_broken_column_downloads_rather_than_refusing(self):
+        """RJR does not survive its hold. Refusing to export it would put the
+        hole in the library exactly where the interesting deals are."""
+        r = client.get("/api/cases/rjr-nabisco-kkr-1989/realised.xlsx")
+        assert r.status_code == 200
+        assert len(r.content) > 8_000
+
+    def test_an_unknown_case_or_column_is_a_404_not_a_500(self):
+        assert client.get("/api/cases/nope/underwriting.xlsx").status_code == 404
+        assert client.get("/api/cases/rjr-nabisco-kkr-1989/wrong.xlsx").status_code == 404
+
+    def test_the_route_does_not_shadow_the_case_detail_endpoint(self):
+        """`/api/cases/{slug}/{column}.xlsx` and `/api/cases/{slug}` are easy to
+        get into the wrong order in a router."""
+        assert client.get("/api/cases/rjr-nabisco-kkr-1989").status_code == 200

@@ -207,6 +207,23 @@ export function CaseStudy() {
           onChange={(id) => setColumn(id as ColumnId)}
         />
 
+        {active && (
+          <div className="column-actions">
+            <a
+              className="btn"
+              href={`/api/cases/${slug}/${column}.xlsx`}
+              download
+            >
+              Download this column as a live Excel model
+            </a>
+            <span className="field-note">
+              {active.failed
+                ? "Formulas, not values — and the schedule stops at the break, as it does here. The workbook says so on its Inputs sheet, and its Returns sheet deliberately prints no IRR: there was no exit, so a return struck on that balance sheet would be an answer to a question nobody asked."
+                : "Formulas, not values. Every calculated cell carries one, inputs are blue named ranges, and iterative calculation is switched on in the file because the interest circularity is real in Excel too."}
+            </span>
+          </div>
+        )}
+
         {active?.note && <div className="column-note">{active.note}</div>}
 
         {!active && (

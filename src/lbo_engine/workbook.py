@@ -70,7 +70,25 @@ def _allocate(pool: str, taken: list[str], capacity: str, negative: bool = True)
 
     Each claimant takes what the ones ahead of it left, capped at what it can
     absorb.
+
+    `taken` must be POSITIVE amounts, so each term needs an explicit `-` in
+    front of the row it points at: repayment rows are stored negative, so they
+    can be summed straight into a closing balance.
+
+    That leading minus is load-bearing and its absence is silent. Subtracting a
+    negative adds, so the second claimant sees a pool *larger* than the first
+    one did and everything below the top of the waterfall over-repays. Nothing
+    errors; the numbers are simply wrong. It is asserted rather than trusted
+    because the bug is invisible in any structure with only one sweepable
+    tranche — which was every fixture the suite had until HCA, with two, was
+    exported.
     """
+    for term in taken:
+        assert term.startswith("-"), (
+            f"_allocate needs the amount already taken as a positive: got {term!r}. "
+            "Repayment rows are negative, so pass `-<cell>`, or the claimants "
+            "below this one silently over-repay."
+        )
     already = "+".join(taken) if taken else "0"
     sign = "-" if negative else ""
     return f"={sign}MIN(MAX({pool}-({already}),0),{capacity})"
@@ -80,8 +98,13 @@ def _money(ws, cell: str) -> None:
     ws[cell].number_format = '#,##0.0;(#,##0.0)'
 
 
-def build_workbook(a: Assumptions):
-    """Return an openpyxl Workbook containing a live, formula-driven model."""
+def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
+    """Return an openpyxl Workbook containing a live, formula-driven model.
+
+    `partial_from` marks this as a schedule that stops at a break: `a` is the
+    truncated deal, `partial_from` the full one it was cut from. Prefer
+    `build_partial_workbook`, which does the truncation for you.
+    """
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.workbook.defined_name import DefinedName
@@ -93,6 +116,7 @@ def build_workbook(a: Assumptions):
     # itself declines to print, which is exactly the inconsistency the Checks
     # sheet exists to make impossible.
     solved = _solve_for_events(a)
+    partial = partial_from is not None
 
     su = build_sources_and_uses(a)
     years = a.hold_years
@@ -151,7 +175,27 @@ def build_workbook(a: Assumptions):
     inp.cell(row=r, column=1, value="Blue cells are inputs. Everything else is calculated.").font = Font(
         italic=True, color="666666", size=9
     )
-    r += 2
+    r += 1
+
+    if partial:
+        # Unmissable, and repeated on the Returns sheet. A partial model that
+        # does not announce itself is the most dangerous file in this project:
+        # every number on it is arithmetically right, and the conclusion someone
+        # would draw from it is wrong.
+        r += 1
+        for line in (
+            f"PARTIAL MODEL - this deal does not survive its "
+            f"{partial_from.hold_years}-year hold.",
+            f"The schedule stops at year {a.hold_years}, the last year the structure "
+            f"could service itself. It breaks in year {a.hold_years + 1}. There is no "
+            "exit and no return, because neither happened.",
+        ):
+            c = inp.cell(row=r, column=1, value=line)
+            c.font = Font(bold=True, color="FFFFFF", size=10)
+            for i in range(1, 9):
+                inp.cell(row=r, column=i).fill = PatternFill("solid", fgColor=_ALARM_BG)
+            r += 1
+    r += 1
 
     head(inp, r, "Entry"); r += 1
     put(r, "Entry EBITDA ($m)", a.entry_ebitda, "Entry_EBITDA", '#,##0.0'); r += 1
@@ -659,19 +703,49 @@ def build_workbook(a: Assumptions):
     label(model, m, "Opening", 2)
     rev_open = m
     for i in range(years):
-        v = "=0" if i == 0 else f"={col(i-1)}{m+3}"
-        c = model.cell(row=m, column=2 + i, value=v)
+        # Filled once the final closing row exists — it moves depending on
+        # whether there are divestitures to repay from.
+        c = model.cell(row=m, column=2 + i, value=0)
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     m += 1
     label(model, m, "Draw", 2); rev_draw = m; m += 1
     label(model, m, "Repayment", 2); rev_repay = m; m += 1
-    label(model, m, "Closing", 2)
+    label(model, m, "Closing, before year-end events", 2)
     rev_close = m
     for i in range(years):
         c = model.cell(row=m, column=2 + i,
                        value=f"={col(i)}{rev_open}+{col(i)}{rev_draw}-{col(i)}{rev_repay}")
-        c.font = Font(color=_BLACK, bold=True); c.number_format = '#,##0.0'
+        c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     m += 1
+
+    # Divestiture proceeds clear the revolver BEFORE the tranches — it is the
+    # most senior claim, and a mandatory prepayment runs top down. The tranche
+    # rows above already assume this happened: their pool is the proceeds less
+    # the revolver's pre-event balance. Without this row the revolver kept that
+    # balance anyway, so total debt double-counted it, and the workbook printed
+    # more debt than the engine on any deal that sold something in a year it had
+    # drawn. RJR, whose whole plan is disposals, was out by a billion.
+    rev_final = rev_close
+    if a.divestitures:
+        label(model, m, "Less: divestiture proceeds", 2)
+        rev_divest = m
+        for i in range(years):
+            c = model.cell(row=m, column=2 + i, value=(
+                f"=-MIN({event_ref('Divest_Net').format(c=col(i))},{col(i)}{rev_close})"))
+            c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
+        m += 1
+        label(model, m, "Closing", 2)
+        rev_final = m
+        for i in range(years):
+            c = model.cell(row=m, column=2 + i,
+                           value=f"={col(i)}{rev_close}+{col(i)}{rev_divest}")
+            c.font = Font(color=_BLACK, bold=True); c.number_format = '#,##0.0'
+        m += 1
+
+    for i in range(years):
+        v = 0 if i == 0 else f"={col(i-1)}{rev_final}"
+        model.cell(row=rev_open, column=2 + i, value=v)
+
     label(model, m, "Undrawn commitment fee", 2)
     rev_fee = m
     for i in range(years):
@@ -852,9 +926,15 @@ def build_workbook(a: Assumptions):
             if not tr["sweepable"]:
                 formula = "=0"
             else:
+                # The sweep rows are negative, like every other repayment, so
+                # they are negated here to give the positive amount already
+                # consumed. Without that the subtraction ADDS, and the second
+                # sweepable tranche sees a bigger pool than the first — which is
+                # exactly what it did, undetected, until a case with two
+                # sweepable tranches was exported.
                 formula = _allocate(
                     f"{col(i)}{sweep_pool}",
-                    [f"{col(i)}{t}" for t in taken],
+                    [f"-{col(i)}{t}" for t in taken],
                     f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}+{col(i)}{tr['amort_row']}")
             c = model.cell(row=tr["sweep_row"], column=2 + i, value=formula)
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
@@ -896,7 +976,7 @@ def build_workbook(a: Assumptions):
                 cell = model.cell(row=tr["divest_row"], column=2 + i)
                 cell.value = str(cell.value).replace("{REVCLOSE}", str(rev_close))
 
-    close_sum = "+".join(f"{{c}}{tr['final_row']}" for tr in tranche_rows) + f"+{{c}}{rev_close}"
+    close_sum = "+".join(f"{{c}}{tr['final_row']}" for tr in tranche_rows) + f"+{{c}}{rev_final}"
     line("Total debt", lambda i: "=" + close_sum.replace("{c}", col(i)), bold=True)
     line("Net debt", lambda i: f"={col(i)}{rows['Total debt']}-{col(i)}{cash_close}", bold=True)
 
@@ -985,7 +1065,7 @@ def build_workbook(a: Assumptions):
         ("Headroom over the minimum cash balance",
          f"=MIN(Model!B{cash_close}:{last}{cash_close})-Minimum_Cash", "positive"),
         ("Unused revolver commitment",
-         f"=Revolver_Commitment-MAX(Model!B{rev_close}:{last}{rev_close})", "positive"),
+         f"=Revolver_Commitment-MAX(Model!B{rev_final}:{last}{rev_final})", "positive"),
     ]
 
     # Covenant headroom, one row per test, and only where the credit agreement
@@ -1038,8 +1118,69 @@ def build_workbook(a: Assumptions):
         cr += 1
     chk.column_dimensions["D"].width = 12
 
-    _freeze(inp, su_ws, model, ret, chk)
+    if partial:
+        _refuse_to_invent_an_exit(wb, ret, chk, a, partial_from, Alignment, Font)
+
+    _freeze(inp, su_ws, model, chk)
     return wb
+
+
+_ALARM_BG = "B03A2E"
+
+
+def _refuse_to_invent_an_exit(wb, ret, chk, a, full, Alignment, Font) -> None:
+    """Strip the Returns sheet of numbers, and say why.
+
+    This is the one place a partial workbook must refuse rather than compute.
+    Every other sheet is simply shorter; this one would be *wrong*. The sponsor
+    did not sell in the final modelled year - the model stops there - so an exit
+    value, a MOIC and an IRR struck on that balance sheet are not conservative
+    estimates. They are arithmetically correct answers to a question nobody
+    asked, and they are exactly the numbers a reader would quote.
+
+    The sheet is rebuilt rather than deleted, because a missing sheet reads as an
+    export bug and invites someone to compute the number by hand.
+    """
+    position = wb.sheetnames.index("Returns")
+    wb.remove(ret)
+    fresh = wb.create_sheet("Returns", position)
+    fresh.column_dimensions["A"].width = 96
+    fresh.cell(row=1, column=1, value="Exit & returns").font = Font(bold=True, size=14)
+
+    lines = [
+        ("No exit, and therefore no return.", True),
+        ("", False),
+        (f"This deal was underwritten on a {full.hold_years}-year hold and does not "
+         f"survive it. The Model sheet runs to year {a.hold_years} - the last year "
+         f"the structure could service itself - and it breaks in year "
+         f"{a.hold_years + 1}.", False),
+        ("", False),
+        ("An exit value, a MOIC and an IRR could all be computed from the closing "
+         "balance sheet on the Model sheet. They are deliberately absent. There was "
+         "no sale in that year, so they would be arithmetically correct answers to a "
+         "question nobody asked - and they are precisely the numbers a reader would "
+         "quote.", False),
+        ("", False),
+        ("What IS here is real: every year up to the break, with the liquidity "
+         "draining year by year, and the Checks sheet still proving the schedule "
+         "ties. That is the useful output of a deal that did not work.", False),
+    ]
+    row = 3
+    for text, strong in lines:
+        c = fresh.cell(row=row, column=1, value=text)
+        c.font = Font(bold=strong, size=12 if strong else 10,
+                      color=_ALARM_BG if strong else "333333")
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        if text:
+            fresh.row_dimensions[row].height = 15 * (1 + len(text) // 100)
+        row += 1
+
+    # The bridge check reconciles to an equity gain that no longer exists. Drop
+    # it rather than leave a row reading #REF!, which would train a reader to
+    # ignore the Checks sheet - the opposite of what it is for.
+    for r in range(chk.max_row, 3, -1):
+        if "Returns!" in str(chk.cell(row=r, column=2).value or ""):
+            chk.delete_rows(r)
 
 
 def _freeze(*sheets) -> None:
@@ -1094,10 +1235,43 @@ def _reject_unsupported(a: Assumptions) -> None:
     return None
 
 
-def workbook_bytes(a: Assumptions) -> bytes:
-    """The workbook as bytes, for an HTTP response."""
+def build_partial_workbook(a: Assumptions):
+    """A workbook for a deal that does not survive its hold.
+
+    Exports the schedule up to the break, which is what the web page already
+    shows and what a credit committee would actually want: the drain made
+    legible, rather than the word "failed".
+
+    Raises if the deal cannot service even one year, since there is then
+    genuinely nothing to show.
+    """
+    from lbo_engine.partial import survivable_years, truncate
+
+    survived = survivable_years(a)
+    if survived <= 0:
+        raise ValueError(
+            "This structure cannot service even its first year, so there is no "
+            "schedule to export. The problem is the structure, not the export."
+        )
+    return build_workbook(truncate(a, survived), partial_from=a)
+
+
+def workbook_bytes(a: Assumptions, *, allow_partial: bool = False) -> bytes:
+    """The workbook as bytes, for an HTTP response.
+
+    `allow_partial` falls back to the schedule-up-to-the-break form rather than
+    refusing outright. Off by default: a caller asking for "the model" should get
+    an error rather than a silently shortened file.
+    """
     import io
 
+    try:
+        wb = build_workbook(a)
+    except ValueError:
+        if not allow_partial:
+            raise
+        wb = build_partial_workbook(a)
+
     buf = io.BytesIO()
-    build_workbook(a).save(buf)
+    wb.save(buf)
     return buf.getvalue()

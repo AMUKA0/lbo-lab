@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from lbo_engine import Assumptions, run_lbo
+from lbo_engine.partial import survivable_years, truncate
 from lbo_engine.analysis import (
     breakeven_exit_multiple,
     credit_stats,
@@ -366,45 +367,6 @@ def schedule_csv(req: DealRequest) -> StreamingResponse:
 # runs in total and there is no reason to repeat them per request.
 
 
-def _truncate(a: Assumptions, years: int) -> Assumptions:
-    """The same deal over a shorter hold.
-
-    EVERY per-year schedule has to come with it, not just the operating ones.
-    A covenant step-down left at full length makes the engine reject the
-    shortened deal for the wrong reason — and because the caller is already
-    inside an `except ValueError`, that rejection is silently indistinguishable
-    from the structure failing in year one. It reported "survived 0 years" on a
-    deal that serviced four of them.
-    """
-    shorter = a.model_copy(deep=True)
-    shorter.hold_years = years
-    shorter.operating.revenue_growth = a.growth_schedule()[:years]
-    shorter.operating.ebitda_margin = a.margin_schedule()[:years]
-    for name in ("net_leverage_ceiling", "interest_coverage_floor"):
-        schedule = a.covenant_schedule(name)
-        if schedule is not None:
-            setattr(shorter.covenants, name, schedule[:years])
-    return shorter
-
-
-def _survivable_years(a: Assumptions) -> int:
-    """The longest hold this structure can actually service.
-
-    A bare "the structure fails" is a dead end that reads like a defect. The
-    useful statement is *when* it breaks and how far it got, so the client can
-    show the schedule up to that point and the reader can see the liquidity
-    draining year by year. Cheap to compute: at most `hold_years` engine runs on
-    a deal we already know is small.
-    """
-    for years in range(a.hold_years - 1, 0, -1):
-        try:
-            run_lbo(_truncate(a, years))
-            return years
-        except ValueError:
-            continue
-    return 0
-
-
 def _replay(a: Assumptions) -> dict:
     """Run one column.
 
@@ -423,10 +385,10 @@ def _replay(a: Assumptions) -> dict:
         result = run_lbo(a)
     except ValueError as exc:
         kind = getattr(exc, "kind", "liquidity")
-        survived = _survivable_years(a)
+        survived = survivable_years(a)
         partial = None
         if survived > 0:
-            shorter = _truncate(a, survived)
+            shorter = truncate(a, survived)
             run = run_lbo(shorter)
             credit = credit_stats(shorter).reset_index().to_dict(orient="records")
             # Deliberately no IRR or MOIC on a partial run: there was no exit in
@@ -556,6 +518,52 @@ def cases() -> dict:
         "cases": [_summary(c) for c in CASES],
         "sources": [{"key": s.key, "label": s.label, "url": s.url} for s in SOURCES],
     }
+
+
+@app.get("/api/cases/{slug}/{column}.xlsx")
+def case_xlsx(slug: str, column: str) -> StreamingResponse:
+    """One case column as a live Excel model.
+
+    The strongest artefact this project has. "Here is Hilton 2007 as an
+    auditable spreadsheet you can flex" is a better thing to hand someone than a
+    web page, and unlike a web page it survives being forwarded.
+
+    Columns that break export as a schedule **up to the break**, which is what
+    the page already shows. The alternative — refusing — would put the hole in
+    the library exactly where the interesting deals are. The file says so on the
+    Inputs sheet and its Returns sheet refuses to print an IRR, because no exit
+    happened and inventing one would be a fabrication.
+    """
+    from lbo_engine.workbook import workbook_bytes
+
+    case = next((c for c in CASES if c.slug == slug), None)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"No case study {slug!r}")
+    if column not in ("underwriting", "realised"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No column {column!r} — expected 'underwriting' or 'realised'",
+        )
+    deal = getattr(case, column)
+    if deal is None:
+        raise HTTPException(
+            status_code=404, detail=f"{slug} has no {column} column modelled")
+
+    try:
+        payload = workbook_bytes(deal, allow_partial=True)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"kind": "export_unsupported", "message": str(exc)},
+        ) from exc
+
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{slug}-{column}.xlsx"'
+        },
+    )
 
 
 @app.get("/api/cases/{slug}")

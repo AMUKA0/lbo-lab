@@ -1468,6 +1468,22 @@ table.data .row-label {
   font-size: 0.8rem;
 }
 
+/* The download control sits between the column tabs and the numbers, because
+   that is the moment someone decides they want the file rather than the page. */
+.column-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3) var(--s4);
+  margin: var(--s4) 0 var(--s5);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--edge);
+}
+.column-actions .field-note {
+  flex: 1 1 34ch;
+  max-width: 74ch;
+}
+
 /* Direction of error, as a chip beside the limitation it belongs to. The sign
    matters more than the magnitude when a reader is deciding how much to trust a
    number, so it is encoded in colour as well as words rather than left to be

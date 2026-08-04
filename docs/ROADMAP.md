@@ -3,7 +3,7 @@
 What is planned, what is deliberately not, and the reasoning behind both. Kept
 because a decision without its reasoning gets re-litigated or silently reversed.
 
-Current state: **269 tests**, deployed on Cloud Run, source public.
+Current state: **303 tests**, deployed on Cloud Run, source public.
 
 ---
 
@@ -52,19 +52,18 @@ agree. Off for every case study, all of which predate the 2017 Act.
 
 ## Phase 3 — not started
 
-### 3.1 Case studies as live workbooks
+### 3.1 Case studies as live workbooks — done
 
-The strongest remaining artefact: *"here is Hilton 2007 as an auditable Excel
-model"* is a better thing to hand someone than a web page. Six of the eight case
-columns already export; the two that don't are RJR's and TXU's realised paths,
-which hit a liquidity break and so have no complete schedule.
+All eight columns export, including the three that break: those come out as a
+schedule up to the break, matching what the page shows. The file announces
+itself on the Inputs sheet, and its Returns sheet refuses to print an IRR
+rather than striking one on a balance sheet where no sale happened.
 
-Needs: a download control on the case page, and a decision about the two broken
-columns — most likely export the schedule up to the break, matching how the web
-page already shows a partial run.
-
-*Also worth doing:* a test asserting the exported case workbook agrees with the
-case's own published figures, so the site and the workbook cannot drift.
+Exporting them found two real formula bugs, both invisible to every fixture the
+suite had. The cash sweep double-counted whenever a *second* tranche was
+sweepable — every existing fixture had exactly one — and the revolver was never
+repaid from divestiture proceeds even though the tranche formulas already
+assumed it had been, so RJR printed a billion of debt that was not there.
 
 ### 3.2 Print-ready output
 
