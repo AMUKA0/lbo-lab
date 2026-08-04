@@ -1468,6 +1468,35 @@ table.data .row-label {
   font-size: 0.8rem;
 }
 
+/* Direction of error, as a chip beside the limitation it belongs to. The sign
+   matters more than the magnitude when a reader is deciding how much to trust a
+   number, so it is encoded in colour as well as words rather than left to be
+   read out of a sentence. */
+.chip-inline {
+  display: inline-block;
+  margin-left: var(--s2);
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.chip-overstates {
+  border-color: var(--rust);
+  color: var(--rust);
+}
+.chip-understates {
+  border-color: var(--pine);
+  color: var(--pine);
+}
+.caveat-list li > div {
+  margin-top: var(--s2);
+  color: var(--text-2);
+}
+
 .source-list {
   list-style: none;
   padding: 0;

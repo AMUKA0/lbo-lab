@@ -3,7 +3,7 @@
 What is planned, what is deliberately not, and the reasoning behind both. Kept
 because a decision without its reasoning gets re-litigated or silently reversed.
 
-Current state: **257 tests**, deployed on Cloud Run, source public.
+Current state: **269 tests**, deployed on Cloud Run, source public.
 
 ---
 
@@ -84,8 +84,11 @@ not feature-complete. Three things separate the current state from that:
    class of error — stale column notes, denied mechanics, and displayed bridge
    rows that do not sum — but the guards only cover what has already gone wrong
    once.
-3. **The honest limits are stated where a reader meets them**, not only in the
-   README. The case pages do this; the simulator does not.
+3. ~~**The honest limits are stated where a reader meets them**, not only in
+   the README.~~ Done. `api/limitations.py` serves them, the simulator renders
+   them with the direction each omission errs in, and a staleness guard rejects
+   any entry denying a mechanic the engine has — with a test proving the guard
+   fires, since a guard that cannot fail is decoration.
 
 ### 3.4 Concrete definition of done for Phase 3
 
@@ -94,9 +97,8 @@ not feature-complete. Three things separate the current state from that:
 - A test asserts an exported case workbook matches that case's published
   figures, so the two cannot drift.
 - Print setup on every sheet.
-- The README's deployment section explains why the Dockerfile imports the app at
-  build time — a missing dependency once failed the deploy rather than the
-  build, and the fix is only useful if the next person knows why it is there.
+- ~~The README's deployment section explains why the Dockerfile imports the app
+  at build time.~~ Done.
 
 ---
 

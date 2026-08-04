@@ -364,6 +364,30 @@ function SimulatorBody({
                     <Skeleton height={300} />
                   )}
                 </Card>
+
+                {/* Last on the page a reader actually uses. The README has
+                    always carried this list and a README is the wrong place
+                    for it: the person most likely to be misled is the one
+                    moving sliders, who has not read it. */}
+                <Card
+                  title="Where this model cannot follow a deal"
+                  eyebrow="Stated, not closed"
+                  note="Every model is wrong in specific ways. These are the ones that would change a number here, with the direction each omission pushes the reported return — the sign matters more than the magnitude when you are deciding how much to trust it."
+                >
+                  <ul className="caveat-list">
+                    {defaults.limitations.map((limit) => (
+                      <li key={limit.title}>
+                        <strong>{limit.title}</strong>
+                        {limit.direction !== "neutral" && (
+                          <span className={`chip-inline chip-${limit.direction}`}>
+                            {limit.direction} the return
+                          </span>
+                        )}
+                        <div>{limit.detail}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
               </div>
             )}
           </div>

@@ -51,13 +51,27 @@ gcloud run deploy lbo-lab --source . --region europe-west2
 
 Cloud Run scales to zero, so a visit after an idle period waits a few seconds for the container to start. That is the cost of the free tier; `--min-instances=1` removes it and stops being free.
 
+### Why the Dockerfile imports the app at build time
+
+```dockerfile
+RUN python -c "import api.main"
+```
+
+That line looks redundant and is not. It exists because of a specific failure that cost an afternoon.
+
+FastAPI inspects a route's signature at **import** time, so a missing runtime dependency does not surface when the route is called — it surfaces when the process starts. `python-multipart` went missing exactly that way: the upload route needs it, the developer venv happened to have it, and `pyproject.toml` did not declare it. Every one of the 202 tests then passing kept passing, because they ran in the venv that had it.
+
+The consequence is that the build succeeded, the image pushed, and the deploy failed minutes later with "container failed to start" — with the real cause buried in Cloud Run's logs rather than in the build output. A dependency error had been converted into an infrastructure error.
+
+Importing the app during the build moves that failure back to where it belongs: the layer that installed the dependencies, with a traceback, before anything is pushed. It costs about a second. **Do not remove it** because it looks like it does nothing — doing nothing is what it looks like when it is working.
+
 ## Test suite
 
 ```bash
 pytest
 ```
 
-257 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+269 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 

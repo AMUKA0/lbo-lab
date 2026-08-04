@@ -325,8 +325,19 @@ export interface Preset {
   assumptions: Assumptions;
 }
 
+/** One thing the model does not do, and which way the omission errs. Served by
+ *  the API rather than duplicated here, so the stated limits and the code
+ *  cannot drift — four gaps have been closed since the list was written, and a
+ *  client-side copy would still be claiming all four. */
+export interface Limitation {
+  title: string;
+  detail: string;
+  direction: "overstates" | "understates" | "neutral";
+}
+
 export interface Defaults {
   assumptions: Assumptions;
   presets: Preset[];
   benchmarks: Record<string, Benchmark>;
+  limitations: Limitation[];
 }

@@ -36,6 +36,7 @@ from lbo_engine.calibration import BENCHMARKS, check_assumptions
 from lbo_engine.returns import sponsor_irr
 
 from api.case_studies import BY_SLUG, CASES, SOURCES, CaseStudy
+from api.limitations import limitations_payload
 from api.presets import PRESETS, default_deal
 from api.serialisation import RunOut, jsonable, run_out
 
@@ -123,6 +124,11 @@ def defaults() -> dict:
         "assumptions": default_deal().model_dump(),
         "presets": PRESETS,
         "benchmarks": jsonable(BENCHMARKS),
+        # Served rather than duplicated in the client, so the stated limits and
+        # the code cannot drift. They have drifted before: four gaps have been
+        # closed since the list was written, and a client-side copy would still
+        # be claiming all four.
+        "limitations": limitations_payload(),
     }
 
 
