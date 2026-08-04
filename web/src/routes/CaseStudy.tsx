@@ -364,12 +364,20 @@ export function CaseStudy() {
               eyebrow="Beyond the operating path itself"
             />
             <p className="prose" style={{ marginBottom: "var(--s4)" }}>
-              The capital structure is identical in both — same EBITDA, same entry
-              multiple, same tranches at the same rates; a test enforces it. These are
-              the remaining inputs that differ. They are here because a reviewer found
-              that Hilton's realised column quietly carried 150bp less capex, and that,
-              not the revenue collapse, was the difference between running eleven years
-              and breaking in year two.
+              The deal is priced identically in both — same entry EBITDA, same entry
+              multiple, same tranches at the same coupons and the same sizes. This
+              table is <em>everything else</em> that differs, and it is derived from
+              the two sets of assumptions rather than written by hand, so nothing can
+              be left out of it.
+            </p>
+            <p className="prose" style={{ marginBottom: "var(--s4)" }}>
+              That distinction was learned twice. A reviewer found Hilton's realised
+              column quietly carrying 150bp less capex — which, not the revenue
+              collapse, was the difference between running eleven years and breaking in
+              year two. The fix was a hand-written list of seven fields, and a second
+              reviewer found four more hiding outside it: the deposit rate in every
+              case, and the refinancing assumption on TXU's term loan, which is that
+              page's whole thesis about how the deal died.
             </p>
             <table className="data" style={{ marginBottom: "var(--s7)" }}>
               <thead>

@@ -460,6 +460,52 @@ class Assumptions(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _entry_ebitda_must_resemble_the_operating_build(self) -> "Assumptions":
+        """`entry_ebitda` and the operating build must describe the same company.
+
+        `entry_ebitda` sets the enterprise value and the size of every tranche.
+        `entry_revenue × ebitda_margin[0]` is what the projection actually
+        starts from. Nothing connected them, so a deal could be priced off one
+        company and modelled as another — and the engine would return a
+        confident four-decimal answer. `entry_ebitda=0.001` on an otherwise
+        normal deal produced a MOIC of 184×, because the tranches were sized at
+        nil and the exit was struck on real earnings.
+
+        The tolerance is deliberately wide. A NORMALISED entry EBITDA is
+        legitimate and common — Dollar General is priced on the last clean year
+        because the trailing one was deliberately depressed by an inventory
+        clearance, and that gap is about 27%. The check is not there to enforce
+        a convention; it is there to catch a number that cannot be describing
+        the same business at all. Anything inside the band is reported as a
+        guardrail flag instead, where a reader can weigh it.
+        """
+        implied = self.operating.entry_revenue * self.margin_schedule()[0]
+        if implied <= 0:
+            return self
+        ratio = self.entry_ebitda / implied
+        if ratio > 4.0 or ratio < 0.25:
+            raise ValueError(
+                f"entry_ebitda of {self.entry_ebitda:,.1f} cannot be reconciled "
+                f"with the operating build, which implies about {implied:,.1f} "
+                f"({ratio:.2f}× apart). These two numbers price the deal and run "
+                "it respectively, so they have to describe the same company. A "
+                "normalised entry EBITDA is fine; a different business is not."
+            )
+        return self
+
+    def entry_ebitda_gap(self) -> float:
+        """How far the priced EBITDA sits from the modelled one, as a ratio.
+
+        Struck on ENTRY revenue, which is already the pre-growth figure — year
+        one has grown on top of it. 1.0 means the deal is priced on exactly the
+        business the projection starts from. Above 1.0 means it is priced on a
+        higher, usually normalised, figure — a judgement worth surfacing,
+        because it silently changes the effective entry multiple.
+        """
+        implied = self.operating.entry_revenue * self.margin_schedule()[0]
+        return self.entry_ebitda / implied if implied > 0 else 1.0
+
+    @model_validator(mode="after")
     def _validate_covenants(self) -> "Assumptions":
         for name in ("net_leverage_ceiling", "interest_coverage_floor"):
             value = getattr(self.covenants, name)

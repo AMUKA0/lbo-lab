@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import math
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -438,57 +439,213 @@ def _outcome(case: CaseStudy) -> dict:
     }
 
 
-# Fields that may legitimately differ between the two columns. Anything outside
-# this set differing is drift, not news, and the test suite rejects it.
+# Fields that may legitimately differ between the two columns: the operating
+# path itself, when and at what you got out, the events that happened, and the
+# market the deal was held through.
+#
+# Anything OUTSIDE this set differing is drift rather than news, and
+# `tests/test_column_deltas.py` rejects it. That sentence used to appear here
+# while the constant was referenced nowhere in the repo — a comment asserting an
+# enforcement that did not exist, which is worse than no claim at all.
+# Listed at the flattened level, one entry per field, so permitting something
+# is a decision rather than a side effect of permitting its parent.
 _MAY_DIFFER = {
-    "revenue_growth", "ebitda_margin",   # the news itself
-    "hold_years", "exit_multiple",       # when and at what you actually got out
-    "recaps", "divestitures", "injections",  # events that happened
+    # The news itself.
+    "revenue_growth", "ebitda_margin",
+    # Realised operating facts. Capex is here because Hilton's really did fall
+    # 150bp — but it is also the field that started all of this, so it is
+    # permitted to differ AND guaranteed to be shown.
+    "capex_pct_revenue", "da_pct_revenue",
+    # When and at what you actually got out.
+    "hold_years", "exit_multiple",
+    # Events that happened.
+    "recaps", "divestitures", "injections",
+    # The market the deal was held through: a 2007 underwriting assumed ~4.4%
+    # on deposits and ZIRP delivered near zero.
+    "cash_deposit_rate",
+    # Policy the sponsor actually ran.
+    "cash_sweep_pct", "minimum_cash",
+}
+
+# Within `tranches`, only these may move. Rates and sizes may not: "same
+# structure, same tranches at the same rates" is a claim the case pages make in
+# prose, so it has to be true.
+_TRANCHE_MAY_DIFFER = {"maturity_years", "refinance_at_maturity", "refinancing_spread"}
+
+# How each field is rendered for a reader. A field absent here still shows up in
+# the table — as a raw value — so adding an assumption cannot silently hide it,
+# which is exactly how `cash_deposit_rate` stayed invisible in all five cases.
+_LABELS = {
+    "capex_pct_revenue": ("Capex (% of revenue)", "{:.1%}"),
+    "da_pct_revenue": ("D&A (% of revenue)", "{:.1%}"),
+    "nwc_pct_revenue": ("Working capital (% of revenue)", "{:.1%}"),
+    "tax_rate": ("Tax rate", "{:.1%}"),
+    "entry_revenue": ("Entry revenue", "${:,.0f}m"),
+    "revenue_growth": ("Revenue growth", None),
+    "ebitda_margin": ("EBITDA margin", None),
+    "cash_sweep_pct": ("Cash sweep", "{:.0%}"),
+    "minimum_cash": ("Minimum cash", "${:,.0f}m"),
+    "cash_deposit_rate": ("Deposit rate on cash", "{:.2%}"),
+    "hold_years": ("Hold", "{} years"),
+    "exit_multiple": ("Exit multiple", "{:.2f}x"),
+    "entry_multiple": ("Entry multiple", "{:.2f}x"),
+    "entry_ebitda": ("Entry EBITDA", "${:,.0f}m"),
+    "pik_election_headroom": ("PIK election headroom", "{:.0%}"),
+    "nol_limit_pct": ("NOL shelter limit", "{:.0%}"),
+    "transaction_fee_pct_ev": ("Transaction fees", "{:.2%}"),
+    "financing_fee_pct_debt": ("Financing fees", "{:.2%}"),
+    "exit_fee_pct_ev": ("Exit costs", "{:.2%}"),
 }
 
 
+# Fields whose bare number is a rate, so a scalar reads as a percentage rather
+# than as "0.06". These are the ones that accept either a scalar or a per-year
+# path, and a table showing "0.06" against "8.0% → 4.1%" is comparing two things
+# a reader has to translate before they can see the difference.
+_RATE_FIELDS = {"revenue_growth", "ebitda_margin"}
+
+
+def _render(field: str, value) -> str:
+    """One value, formatted for a reader rather than for a debugger."""
+    label_fmt = _LABELS.get(field, (None, None))[1]
+
+    if isinstance(value, list):
+        if not value:
+            return "none"
+        if all(isinstance(v, (int, float)) for v in value):
+            # A per-year path. Show the ends; the schedule carries the middle.
+            span = f" over {len(value)} years" if len(value) > 1 else ""
+            return f"{value[0]:.1%} → {value[-1]:.1%}{span}"
+        # A list of capital events. Count them and say what they are.
+        noun = {"recaps": "recap", "divestitures": "divestiture",
+                "injections": "injection"}.get(field, "entry")
+        return f"{len(value)} {noun}" + ("s" if len(value) != 1 else "")
+
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+
+    if isinstance(value, (int, float)):
+        if field in _RATE_FIELDS:
+            return f"{value:.1%}, flat"
+        if label_fmt:
+            try:
+                return label_fmt.format(value)
+            except (ValueError, TypeError):
+                return str(value)
+    return str(value)
+
+
+def _flatten(deal) -> dict:
+    """The deal as a flat field → value map, one level into `operating`.
+
+    Derived from `model_dump()` rather than listed by hand. The hand-written
+    version covered seven fields and silently hid everything else — including
+    `cash_deposit_rate`, which differs in every case in the library, and the
+    refinancing flag on TXU's term loan, which is the single most consequential
+    judgement in that case.
+    """
+    dump = deal.model_dump()
+    flat: dict = {}
+    for key, value in dump.items():
+        if key == "operating":
+            flat.update(value)
+        elif key == "tranches":
+            for i, tranche in enumerate(value):
+                for sub, inner in tranche.items():
+                    flat[f"tranche[{i}].{sub}"] = inner
+        elif key in ("revolver", "covenants", "interest_limitation"):
+            for sub, inner in value.items():
+                flat[f"{key}.{sub}"] = inner
+        else:
+            flat[key] = value
+    return flat
+
+
+def _readable(field: str, case: CaseStudy) -> str:
+    """A field with no label of its own, made presentable.
+
+    Deliberately still a little raw: an unlabelled field showing up in the table
+    is a prompt to give it a proper label, not a reason to hide it. Tranche
+    fields get the tranche's real name, because "tranche[0]" tells a reader
+    nothing and this is the row that discloses TXU's refinancing assumption.
+    """
+    if field.startswith("tranche["):
+        index = int(field[len("tranche["):field.index("]")])
+        rest = field.split(".", 1)[1].replace("_", " ")
+        tranches = case.underwriting.tranches
+        name = tranches[index].name if index < len(tranches) else f"Tranche {index + 1}"
+        return f"{name} — {rest}"
+    label = field.replace("_", " ").replace(".", " — ")
+    return label[0].upper() + label[1:]
+
+
 def _column_deltas(case: CaseStudy) -> list[dict]:
-    """Every operating input that differs between the columns, spelled out.
+    """Every input that differs between the columns, spelled out.
 
     The claim "same structure, fed the operating path that happened" is only
     worth anything if the reader can see what else moved. Hilton's realised
-    column carries 150bp less capex than its underwriting column, and that --
-    not the revenue collapse -- is the difference between a deal that runs
+    column carries 150bp less capex than its underwriting column, and that —
+    not the revenue collapse — is the difference between a deal that runs
     eleven years and one that breaks in year two. It was undisclosed until a
     reviewer found it.
+
+    The first version of this fixed that one case and left the mechanism as a
+    hardcoded list of seven fields, so a second reviewer found four more. It is
+    now derived, and the default is DISCLOSE: a field nobody has thought to
+    label still appears, with a raw value, rather than vanishing.
     """
     if case.realised is None:
         return []
-    u, r = case.underwriting, case.realised
+
+    left, right = _flatten(case.underwriting), _flatten(case.realised)
     out: list[dict] = []
-
-    def add(label, a, b, fmt="{:.1%}"):
-        if a != b:
-            out.append({"field": label, "underwriting": fmt.format(a), "realised": fmt.format(b)})
-
-    add("Capex (% of revenue)", u.operating.capex_pct_revenue, r.operating.capex_pct_revenue)
-    add("D&A (% of revenue)", u.operating.da_pct_revenue, r.operating.da_pct_revenue)
-    add("Working capital (% of revenue)", u.operating.nwc_pct_revenue, r.operating.nwc_pct_revenue)
-    add("Cash sweep", u.cash_sweep_pct, r.cash_sweep_pct)
-    add("Minimum cash", u.minimum_cash, r.minimum_cash, "${:,.0f}m")
-    add("Hold", u.hold_years, r.hold_years, "{} years")
-    add("Exit multiple", u.exit_multiple, r.exit_multiple, "{:.1f}x")
+    for field in sorted(set(left) | set(right)):
+        a, b = left.get(field), right.get(field)
+        if a == b:
+            continue
+        label = _LABELS.get(field, (None,))[0]
+        if label is None:
+            label = _readable(field, case)
+        out.append({
+            "field": label,
+            "underwriting": _render(field, a),
+            "realised": _render(field, b),
+        })
     return out
 
 
-def _break_note(case: CaseStudy, column: str) -> dict | None:
-    """The account of the year this column breaks, if it breaks."""
+def _break_note(case: CaseStudy, column: str, replay: dict) -> dict | None:
+    """The account of the year this column breaks, if it breaks.
+
+    Engine figures are substituted from `replay` rather than typed into the
+    prose. TXU carried a hardcoded "$977m" for weeks after the real shortfall
+    had moved to $1,923.8m — on the same page that printed the engine's own
+    message contradicting it. A number that cannot be typed cannot go stale.
+    """
     note = next((b for b in case.break_notes if b.column == column), None)
     if note is None:
         return None
-    return {
-        "year": note.year,
-        "calendar": note.calendar,
-        "headline": note.headline,
-        "what_happened": note.what_happened,
-        "what_the_engine_saw": note.what_the_engine_saw,
-        "what_the_engine_cannot_see": note.what_the_engine_cannot_see,
-    }
+
+    shortfall = _shortfall_from(replay.get("message"))
+    return note.filled(
+        break_year=replay.get("breaks_in_year") or note.year,
+        survived_years=replay.get("survived_years", note.year - 1),
+        shortfall=f"${shortfall:,.0f}m" if shortfall is not None else "the",
+    )
+
+
+def _shortfall_from(message: str | None) -> float | None:
+    """The gap the engine actually reported, pulled out of its own message.
+
+    Parsing a string the same module produced is not elegant. The alternative —
+    threading the exception object through the replay dict — is more plumbing
+    for the same answer, and this is pinned by a test that fails the moment the
+    message wording changes.
+    """
+    if not message:
+        return None
+    found = re.search(r"shortfall of ([\d,]+(?:\.\d+)?)", message)
+    return float(found.group(1).replace(",", "")) if found else None
 
 
 def _summary(case: CaseStudy) -> dict:
@@ -587,6 +744,11 @@ def case_detail(slug: str) -> dict:
     if case is None:
         raise HTTPException(status_code=404, detail=f"No case study with slug {slug!r}")
 
+    # Run both columns once, up front: the break notes are filled from these,
+    # so the prose and the schedule cannot disagree about the same number.
+    underwriting = _replay(case.underwriting)
+    realised = _replay(case.realised) if case.realised is not None else None
+
     by_key = {s.key: s for s in SOURCES}
     return {
         **_summary(case),
@@ -616,15 +778,15 @@ def case_detail(slug: str) -> dict:
         "underwriting": {
             "assumptions": case.underwriting.model_dump(),
             "note": case.column_notes.get("underwriting"),
-            "break_note": _break_note(case, "underwriting"),
-            **_replay(case.underwriting),
+            "break_note": _break_note(case, "underwriting", underwriting),
+            **underwriting,
         },
         "realised": (
             {
                 "assumptions": case.realised.model_dump(),
                 "note": case.column_notes.get("realised"),
-                "break_note": _break_note(case, "realised"),
-                **_replay(case.realised),
+                "break_note": _break_note(case, "realised", realised),
+                **realised,
             }
             if case.realised is not None
             else None

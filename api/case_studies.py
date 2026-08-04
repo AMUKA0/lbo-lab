@@ -228,6 +228,13 @@ class BreakNote:
     what actually happened that year, what the engine computed from the numbers,
     and what the engine structurally could not see. The third is always the
     reason the modelled break and the real outcome differ.
+
+    Any figure the ENGINE produces is written as a placeholder — `{shortfall}`,
+    `{break_year}`, `{survived_years}` — and filled from the actual run when the
+    page is served. Hardcoding them is how prose drifts: TXU carried "$977m" for
+    weeks after the real shortfall had moved to $1,923.8m, on the same page that
+    printed the engine's own message contradicting it. A number that cannot be
+    typed cannot go stale.
     """
 
     column: Literal["underwriting", "realised"]
@@ -237,6 +244,26 @@ class BreakNote:
     what_happened: str
     what_the_engine_saw: str
     what_the_engine_cannot_see: str
+
+    def filled(self, **facts) -> dict:
+        """The note with every engine figure substituted from the run."""
+        def fill(text: str) -> str:
+            try:
+                return text.format(**facts)
+            except (KeyError, IndexError) as exc:  # a placeholder with no fact
+                raise KeyError(
+                    f"break note for {self.column} uses {exc} but the run does "
+                    "not supply it"
+                ) from exc
+
+        return {
+            "year": self.year,
+            "calendar": self.calendar,
+            "headline": self.headline,
+            "what_happened": fill(self.what_happened),
+            "what_the_engine_saw": fill(self.what_the_engine_saw),
+            "what_the_engine_cannot_see": fill(self.what_the_engine_cannot_see),
+        }
 
 
 @dataclass(frozen=True)
@@ -1056,8 +1083,8 @@ TXU = CaseStudy(
                 "Margin compressing from 47% toward 27% on a top line falling 5–10% a "
                 "year, against a largely fixed cost base and roughly $36bn of debt. "
                 "Cash interest that was comfortably covered at close became larger "
-                "than EBITDA, the revolver drained, and by year five there was a $977m "
-                "gap the facility could not fund."
+                "than EBITDA, the revolver drained, and by year {break_year} there was "
+                "a {shortfall} gap the facility could not fund."
             ),
             what_the_engine_cannot_see=(
                 "The hedge book, which is why the modelled break lands around 2012 and "
@@ -1757,7 +1784,8 @@ DOLLAR_GENERAL = CaseStudy(
         "underwriting": (
             "A recovery case, and a deliberately unambitious one: margin returns to "
             "the 8.7% of fiscal 2005 and stops there, revenue compounds at "
-            "mid-single digits, and the exit is underwritten BELOW entry at 9.0x. "
+            "mid-single digits, and the exit is underwritten flat to entry at "
+            "9.75×, assuming no re-rating at all. "
             "Almost every assumption is the conservative one, which is what makes "
             "the return it produces worth looking at."
         ),

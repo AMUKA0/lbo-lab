@@ -76,6 +76,25 @@ def check_assumptions(a: Assumptions) -> list[Flag]:
             BENCHMARKS["entry_multiple"]["source"],
         ))
 
+    # Priced on one EBITDA, run off another. Legitimate — a normalised entry
+    # figure is standard — but it moves the effective entry multiple without
+    # appearing anywhere, so it is surfaced rather than left to be discovered.
+    gap = a.entry_ebitda_gap()
+    if gap > 1.15 or gap < 0.87:
+        at_entry = a.entry_ebitda / gap
+        year_one = at_entry * (1.0 + a.growth_schedule()[0])
+        direction = "above" if gap > 1 else "below"
+        flags.append(Flag(
+            "entry_ebitda", "amber",
+            f"Priced on {a.entry_ebitda:,.0f} of EBITDA, {abs(gap - 1) * 100:.0f}% "
+            f"{direction} the {at_entry:,.0f} the operating build implies at entry "
+            f"({year_one:,.0f} in year one). Normalising is defensible and often "
+            f"right — but on the business the model actually projects, the entry "
+            f"multiple is {a.entry_multiple * gap:.1f}×, not {a.entry_multiple:.1f}×, "
+            "and a reader comparing this deal to another will use the headline.",
+            "State the normalisation and show both multiples.",
+        ))
+
     lo, hi = BENCHMARKS["total_leverage"]["band"]
     lev = a.total_leverage_turns
     if lev > hi:
