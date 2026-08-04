@@ -975,26 +975,36 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
 
     # Senior-first allocation: each tranche takes what is left after the ones
     # above it, capped at its own balance.
+    # Every sweepable tranche gets the same formula, gated on its OWN blue
+    # `{slug}_Sweepable` cell rather than on a flag baked in at export time.
+    #
+    # It used to be baked in: a non-sweepable tranche got a literal `=0`, and the
+    # blue input sat there driving nothing. Flipping it changed no number. A blue
+    # cell that does not drive anything is the commonest cause of a wrong answer
+    # in a flexed model, and a sheet whose header says "blue cells are inputs"
+    # actively invites the mistake.
+    #
+    # Because the flag is now live, EVERY tranche has to appear in `taken` —
+    # what a junior tranche can absorb depends on what the seniors took, and that
+    # is a decision the sheet makes at calculation time, not one we can make here.
     taken: list[str] = []
     for tr in tranche_rows:
+        slug = tr["slug"]
         for i in range(years):
-            if not tr["sweepable"]:
-                formula = "=0"
-            else:
-                # The sweep rows are negative, like every other repayment, so
-                # they are negated here to give the positive amount already
-                # consumed. Without that the subtraction ADDS, and the second
-                # sweepable tranche sees a bigger pool than the first — which is
-                # exactly what it did, undetected, until a case with two
-                # sweepable tranches was exported.
-                formula = _allocate(
-                    f"{col(i)}{sweep_pool}",
-                    [f"-{col(i)}{t}" for t in taken],
-                    f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}+{col(i)}{tr['amort_row']}")
+            # The sweep rows are negative, like every other repayment, so they
+            # are negated here to give the positive amount already consumed.
+            # Without that the subtraction ADDS, and the second sweepable
+            # tranche sees a bigger pool than the first — which is exactly what
+            # it did, undetected, until a case with two sweepable tranches was
+            # exported.
+            allocation = _allocate(
+                f"{col(i)}{sweep_pool}",
+                [f"-{col(i)}{t}" for t in taken],
+                f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}+{col(i)}{tr['amort_row']}")
+            formula = f"=IF({slug}_Sweepable=1,{allocation.lstrip('=')},0)"
             c = model.cell(row=tr["sweep_row"], column=2 + i, value=formula)
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
-        if tr["sweepable"]:
-            taken.append(str(tr["sweep_row"]))
+        taken.append(str(tr["sweep_row"]))
 
     swept = ("+".join(f"{{c}}{t}" for t in taken)) if taken else "0"
     label(model, m, "Closing cash", 1)
@@ -1042,8 +1052,12 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
     ret.cell(row=1, column=1, value="Exit & returns").font = Font(bold=True, size=14)
     last = col(years - 1)
 
+    # Wide enough for a flow per year plus the close.
+    for i in range(years + 1):
+        ret.column_dimensions[chr(ord("B") + i)].width = 13
+
     rr = 3
-    head(ret, rr, "Exit", 2); rr += 1
+    head(ret, rr, "Exit", years + 2); rr += 1
     for text, formula, fmt in (
         ("Terminal EBITDA", f"=Model!{last}{rows['EBITDA']}", '#,##0.0'),
         ("Exit enterprise value", f"=Model!{last}{rows['EBITDA']}*Exit_Multiple", '#,##0.0'),
@@ -1060,33 +1074,157 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
     exit_eq = f"Returns!$B${rr}"
     rr += 2
 
-    head(ret, rr, "Returns", 2); rr += 1
-    label(ret, rr, "Entry equity", 1)
-    ret.cell(row=rr, column=2, value=f"={equity_cell}").font = Font(color=_GREEN)
+    # --- the sponsor's actual cash flows, year by year ----------------------
+    #
+    # This block exists because its absence was a real, shipped error. MOIC was
+    # exit equity over the closing cheque and IRR was that multiple compounded
+    # over the hold — both correct ONLY for a deal with no interim flows, and
+    # asserted as correct for every deal. On HCA, whose sponsors took a $4.3bn
+    # recap dividend in year four, the workbook reported 2.27x against the
+    # engine's 2.95x. The debt that funded the dividend was in the model; the
+    # dividend was not. On Hilton, where the sponsor injected rescue capital,
+    # the same omission ran the other way and flattered the multiple.
+    #
+    # Laid out horizontally, year 0 to the exit, because that is the shape IRR
+    # takes and because a reader can see the money move.
+    head(ret, rr, "Sponsor cash flows", years + 2); rr += 1
+    label(ret, rr, "Year", 1)
+    for i in range(years + 1):
+        c = ret.cell(row=rr, column=2 + i, value=i)
+        c.font = Font(bold=True, color=_BLACK); c.alignment = Alignment(horizontal="center")
+    rr += 1
+
+    def flow_row(text: str, filler) -> int:
+        nonlocal rr
+        label(ret, rr, text, 1)
+        for i in range(years + 1):
+            c = ret.cell(row=rr, column=2 + i, value=filler(i))
+            c.font = Font(color=_BLACK); c.number_format = '#,##0.0;(#,##0.0)'
+        rr += 1
+        return rr - 1
+
+    fc = lambda i: chr(ord("B") + i)  # noqa: E731 - flow column for year i
+
+    invested_row = flow_row(
+        "Equity invested at close",
+        lambda i: f"=-{equity_cell}" if i == 0 else "=0",
+    )
+
+    # An injection funds the year it goes into, so it is spent at that year's
+    # START — index year-1 in the flow vector. Discounting it a year later than
+    # it was paid would flatter the IRR of every rescued deal.
+    if a.injections:
+        injection_row = flow_row(
+            "Follow-on equity",
+            lambda i: (f"=-{event_ref('Injection_Cash').format(c=col(i))}"
+                       if i < years else "=0"),
+        )
+    else:
+        injection_row = None
+
+    # A recap is a year-END event, so it lands at index `year`. What reaches the
+    # sponsor is the debt raised less the financing fee on it.
+    if a.recaps:
+        dividend_row = flow_row(
+            "Recap dividends",
+            lambda i: (f"={event_ref('Recap_Raised').format(c=col(i - 1))}"
+                       f"-{event_ref('Recap_Fee').format(c=col(i - 1))}"
+                       if i >= 1 else "=0"),
+        )
+    else:
+        dividend_row = None
+
+    exit_row = flow_row(
+        "Exit proceeds",
+        lambda i: f"={exit_eq}" if i == years else "=0",
+    )
+
+    parts = [invested_row, exit_row] + [r for r in (injection_row, dividend_row) if r]
+    label(ret, rr, "Net cash flow", 0); ret.cell(row=rr, column=1).font = Font(bold=True)
+    for i in range(years + 1):
+        formula = "=" + "+".join(f"{fc(i)}{r}" for r in sorted(parts))
+        c = ret.cell(row=rr, column=2 + i, value=formula)
+        c.font = Font(bold=True, color=_BLACK); c.number_format = '#,##0.0;(#,##0.0)'
+    flow_row_index = rr
+    flow_range = f"Returns!$B${rr}:${fc(years)}${rr}"
+    rr += 2
+
+    # --- returns, struck on those flows ------------------------------------
+    head(ret, rr, "Returns", years + 2); rr += 1
+
+    invested_terms = [f"{fc(i)}{invested_row}" for i in range(years + 1)]
+    if injection_row:
+        invested_terms += [f"{fc(i)}{injection_row}" for i in range(years + 1)]
+    proceeds_terms = [f"{fc(i)}{exit_row}" for i in range(years + 1)]
+    if dividend_row:
+        proceeds_terms += [f"{fc(i)}{dividend_row}" for i in range(years + 1)]
+
+    label(ret, rr, "Total invested", 1)
+    ret.cell(row=rr, column=2, value="=-(" + "+".join(invested_terms) + ")").font = Font(color=_BLACK)
     ret.cell(row=rr, column=2).number_format = '#,##0.0'
-    entry_eq = f"Returns!$B${rr}"; rr += 1
+    total_invested = f"Returns!$B${rr}"; rr += 1
+
+    label(ret, rr, "Total proceeds", 1)
+    ret.cell(row=rr, column=2, value="=" + "+".join(proceeds_terms)).font = Font(color=_BLACK)
+    ret.cell(row=rr, column=2).number_format = '#,##0.0'
+    total_proceeds = f"Returns!$B${rr}"; rr += 1
+
     label(ret, rr, "MOIC", 1)
-    ret.cell(row=rr, column=2, value=f"={exit_eq}/{entry_eq}").font = Font(bold=True)
-    ret.cell(row=rr, column=2).number_format = '0.00"x"'; rr += 1
+    moic_cell = f"Returns!$B${rr}"
+    ret.cell(row=rr, column=2, value=f"={total_proceeds}/{total_invested}").font = Font(bold=True)
+    ret.cell(row=rr, column=2).number_format = '0.00"x"'
+    ret.cell(row=rr, column=3, value="Every dollar back over every dollar in — "
+             "rescue capital raises the denominator, recap dividends the numerator.").font = Font(
+        italic=True, color="666666", size=9)
+    rr += 1
+
     label(ret, rr, "IRR", 1)
-    ret.cell(row=rr, column=2, value=f"=({exit_eq}/{entry_eq})^(1/Hold_Years)-1").font = Font(bold=True)
+    # IRR over the flow vector, not the compounded multiple. Those are the same
+    # number only when nothing happens between close and exit, and the previous
+    # version asserted the equivalence in a comment on files where it was false.
+    ret.cell(row=rr, column=2, value=f"=IRR({flow_range})").font = Font(bold=True)
     ret.cell(row=rr, column=2).number_format = '0.0%'
-    ret.cell(row=rr, column=3,
-             value="No interim flows, so IRR is the compounded multiple.").font = Font(
+    ret.cell(row=rr, column=3, value="Solved over the cash-flow row above. Annual "
+             "periods, so IRR() rather than XIRR().").font = Font(
         italic=True, color="666666", size=9)
     rr += 2
 
-    head(ret, rr, "Value creation bridge", 2); rr += 1
+    head(ret, rr, "Value creation bridge", years + 2); rr += 1
     bridge = [
         ("EBITDA growth × entry multiple",
          f"=(Model!{last}{rows['EBITDA']}-Entry_EBITDA)*Entry_Multiple"),
         ("Multiple change × exit EBITDA",
          f"=(Exit_Multiple-Entry_Multiple)*Model!{last}{rows['EBITDA']}"),
-        ("Net debt paydown",
-         f"=({debt_cell}-{cash_cell})-Model!{last}{rows['Net debt']}"),
-        ("Fees",
-         f"=-({txn_cell}+{fin_cell}+Model!{last}{rows['EBITDA']}*Exit_Multiple*Exit_Fee_Pct)"),
     ]
+
+    # Divestiture proceeds are split OUT of deleveraging: paying debt down with
+    # the proceeds of a sale is not the business earning its way down, and
+    # merging the two is the commonest way a bridge flatters an operator.
+    divested = ("+".join(event_ref("Divest_Net").format(c=col(i)) for i in range(years))
+                if a.divestitures else "0")
+    bridge.append((
+        "Net debt paydown (from operations)",
+        f"=({debt_cell}-{cash_cell})-Model!{last}{rows['Net debt']}-({divested})",
+    ))
+    if a.divestitures:
+        bridge.append(("Divestiture proceeds", f"={divested}"))
+    if a.recaps:
+        # GROSS debt raised, not the net dividend: the fee is picked up in the
+        # fee line below, and netting it here would leave the identity short.
+        raised = "+".join(event_ref("Recap_Raised").format(c=col(i)) for i in range(years))
+        bridge.append(("Recapitalisation", f"={raised}"))
+    if a.injections:
+        injected = "+".join(event_ref("Injection_Cash").format(c=col(i)) for i in range(years))
+        bridge.append(("Follow-on equity", f"=-({injected})"))
+
+    recap_fees = ("+".join(event_ref("Recap_Fee").format(c=col(i)) for i in range(years))
+                  if a.recaps else "0")
+    bridge.append((
+        "Fees",
+        f"=-({txn_cell}+{fin_cell}+({recap_fees})"
+        f"+Model!{last}{rows['EBITDA']}*Exit_Multiple*Exit_Fee_Pct)",
+    ))
+
     first_bridge = rr
     for text, formula in bridge:
         label(ret, rr, text, 1)
@@ -1116,7 +1254,13 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
     checks = [
         ("Sources equal uses", f"={sources_cell}-{uses_cell}", "zero"),
         ("Bridge reconciles to the equity gain",
-         f"={bridge_total}-({exit_eq}-{entry_eq})", "zero"),
+         f"={bridge_total}-({total_proceeds}-{total_invested})", "zero"),
+        # The flow vector and the multiple must describe the same deal. They
+        # are computed from the same rows, so this is cheap — and it is exactly
+        # the tie that was missing when MOIC ignored every interim flow while
+        # the schedule above it modelled them.
+        ("Net cash flows sum to proceeds less invested",
+         f"=SUM({flow_range})-({total_proceeds}-{total_invested})", "zero"),
         ("Headroom over the minimum cash balance",
          f"=MIN(Model!B{cash_close}:{last}{cash_close})-Minimum_Cash", "positive"),
         ("Unused revolver commitment",

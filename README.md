@@ -71,7 +71,7 @@ Importing the app during the build moves that failure back to where it belongs: 
 pytest
 ```
 
-432 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+453 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 
@@ -87,7 +87,7 @@ Three things about it are load-bearing:
 
 - **Iterative calculation is switched on in the file itself.** Interest on average balances is circular in Excel exactly as it is here, and a workbook that opens to a wall of circular-reference warnings reads as broken. The flag is written into the file rather than left for the user to find.
 - **Inputs are named ranges** (`Entry_EBITDA`, never `Inputs!B7`), because analysts insert rows and named ranges survive that.
-- **The workbook is tested against the engine.** `tests/test_workbook.py` writes the file, recalculates it with an independent formula evaluator, and asserts every line agrees to 1e-4 — EBITDA, interest, tax, closing cash, net debt, exit equity and MOIC, across every year. A formula export is a second implementation of the maths, and without that test it can drift from the first silently.
+- **The workbook is tested against the engine.** `tests/test_workbook.py` writes the file, recalculates it with an independent formula evaluator, and asserts every line agrees to 1e-4 — EBITDA, interest, tax, closing cash, net debt, exit equity, MOIC *and IRR*, across every year, **on a fixture that carries a recap, an injection and a divestiture**. That last clause is load-bearing and was missing: the fixture used to be a deal where nothing happens, so the Returns sheet could strike MOIC on the closing cheque alone, ignore a $4.3bn recap dividend, and pass every test in the suite. `tests/test_case_workbooks.py` now asserts the same on all ten real case columns. A formula export is a second implementation of the maths, and a test that only exercises the quiet path certifies only the quiet path.
 
 ### The round trip
 

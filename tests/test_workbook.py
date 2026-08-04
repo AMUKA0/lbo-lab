@@ -20,6 +20,7 @@ import tempfile
 import pytest
 
 from lbo_engine import Assumptions, InterestLimitation, run_lbo
+from lbo_engine.returns import sponsor_irr
 from lbo_engine.workbook import build_workbook
 
 openpyxl = pytest.importorskip("openpyxl")
@@ -462,3 +463,195 @@ class TestItPrints:
         wb = build_partial_workbook(broken)
         for sheet in wb.worksheets:
             assert sheet.print_area, f"{sheet.title} has no print area"
+
+
+class TestTheReturnsSheetSeesEveryFlow:
+    """The bug this class exists for: MOIC was exit equity over the closing
+    cheque, and IRR was that multiple compounded over the hold. Both are correct
+    ONLY when nothing happens between close and exit — and the sheet asserted
+    the equivalence in a printed comment on files where it was false.
+
+    On HCA, whose sponsors took a $4.3bn recap dividend in year four, the export
+    reported 2.27× against the engine's 2.95×. The debt that funded the dividend
+    was in the model; the dividend was not. On Hilton the same omission ran the
+    other way, flattering the multiple by ignoring $800m of rescue capital.
+
+    Every check on both files read OK, because the four-line Excel bridge was
+    algebraically tautological with the wrong entry equity.
+    """
+
+    def test_moic_and_irr_agree_with_the_engine_on_a_deal_with_events(
+        self, eventful_deal
+    ):
+        deal = _acyclic(eventful_deal)
+        value, row, _ = _recalculate(_write(deal, "events.xlsx"))
+        result = run_lbo(deal)
+
+        assert deal.recaps and deal.injections, "the fixture must exercise both"
+        assert value("Returns", f"B{row('Returns', 'MOIC')}") == pytest.approx(
+            result.moic, abs=1e-4)
+        assert value("Returns", f"B{row('Returns', 'IRR')}") == pytest.approx(
+            sponsor_irr(result), abs=1e-4)
+
+    def test_the_flow_vector_carries_the_dividend_and_the_injection(
+        self, eventful_deal
+    ):
+        """Not just the totals — the money has to appear in the year it moved,
+        or the IRR is right by luck."""
+        deal = _acyclic(eventful_deal)
+        value, row, _ = _recalculate(_write(deal, "flows.xlsx"))
+        result = run_lbo(deal)
+
+        flows = result.equity_cash_flows
+        net = row("Returns", "Net cash flow")
+        for i, expected in enumerate(flows):
+            column = chr(ord("B") + i)
+            assert value("Returns", f"{column}{net}") == pytest.approx(
+                expected, abs=1e-4), f"year {i} flow"
+
+    def test_total_invested_includes_rescue_capital(self, eventful_deal):
+        deal = _acyclic(eventful_deal)
+        value, row, _ = _recalculate(_write(deal, "invested.xlsx"))
+        result = run_lbo(deal)
+
+        assert value("Returns", f"B{row('Returns', 'Total invested')}") == pytest.approx(
+            result.total_invested, abs=1e-4)
+        assert result.total_invested > result.entry_equity, (
+            "the fixture must inject something, or this proves nothing"
+        )
+
+    def test_the_bridge_carries_the_event_lines(self, eventful_deal):
+        """`returns.py` splits divestiture proceeds out of deleveraging and
+        carries follow-on equity as a negative line, precisely so a sale is not
+        reported as operational paydown. The Excel bridge dropped both."""
+        _, _, wb = _recalculate(_write(_acyclic(eventful_deal), "bridge.xlsx"))
+        labels = [r[0].value for r in wb["Returns"].iter_rows(min_col=1, max_col=1)
+                  if r[0].value]
+        for expected in ("Divestiture proceeds", "Recapitalisation", "Follow-on equity"):
+            assert expected in labels, f"{expected} missing from the Excel bridge"
+
+    def test_the_bridge_still_reconciles_with_events(self, eventful_deal):
+        value, row, wb = _recalculate(_write(_acyclic(eventful_deal), "recon.xlsx"))
+        r = row("Checks", "Bridge reconciles to the equity gain")
+        assert value("Checks", f"B{r}") == pytest.approx(0.0, abs=0.01)
+
+    def test_a_deal_with_no_events_is_unchanged(self, rich_deal):
+        """The quiet path must not move. A fix that shifts every existing
+        schedule is a different bug."""
+        deal = _acyclic(rich_deal)
+        value, row, _ = _recalculate(_write(deal, "quiet.xlsx"))
+        result = run_lbo(deal)
+        assert value("Returns", f"B{row('Returns', 'MOIC')}") == pytest.approx(
+            result.moic, abs=1e-6)
+
+
+class TestEveryBlueCellDrivesSomething:
+    """A blue input that changes no number is the commonest cause of a wrong
+    answer in a flexed model, and this sheet's own header says "blue cells are
+    inputs". `T3_Sweepable` was blue, labelled, named — and referenced by no
+    formula, because the export baked the flag in at write time."""
+
+    def _sweeping_deal(self, rich_deal):
+        """A structure where the junior CAN sweep: the senior is small enough to
+        be repaid, so there is a pool left for the tranche below it. On the
+        stock fixture the senior never clears and the flag is unobservable —
+        which is a fact about the waterfall, not about the flag."""
+        d = _acyclic(rich_deal).model_copy(deep=True)
+        d.tranches[0].leverage_turns = 0.5
+        return Assumptions.model_validate(d.model_dump())
+
+    def test_the_formula_reads_the_named_input(self, rich_deal):
+        """Structural: every sweep row must consult its own blue cell, whatever
+        the waterfall happens to allow on a given deal."""
+        wb = build_workbook(rich_deal)
+        rows = [r[0].row for r in wb["Model"].iter_rows(min_col=1, max_col=1)
+                if r[0].value == "Cash sweep"]
+        assert len(rows) == len(rich_deal.tranches)
+        for index, row in enumerate(rows, start=1):
+            formula = wb["Model"].cell(row=row, column=2).value
+            assert f"T{index}_Sweepable" in str(formula), (
+                f"tranche {index}'s sweep ignores its own flag: {formula}"
+            )
+
+    def test_flipping_sweepable_actually_changes_the_sweep(self, rich_deal):
+        deal = self._sweeping_deal(rich_deal)
+        assert not deal.tranches[1].sweepable, "fixture must start non-sweeping"
+
+        path = _write(deal, "sweepflag.xlsx")
+        before, row, _ = _recalculate(path)
+        junior = [r[0].row for r in openpyxl.load_workbook(path)["Model"].iter_rows(
+            min_col=1, max_col=1) if r[0].value == "Cash sweep"][-1]
+        assert before("Model", f"C{junior}") == pytest.approx(0.0, abs=1e-9)
+
+        wb = openpyxl.load_workbook(path)
+        sheet, ref = next(iter(wb.defined_names["T2_Sweepable"].destinations))
+        wb[sheet][ref.replace("$", "")].value = 1
+        wb.save(path)
+
+        after, _, _ = _recalculate(path)
+        assert abs(after("Model", f"C{junior}")) > 1.0, (
+            "flipping the blue Sweepable cell changed nothing — it is dead again"
+        )
+
+    def test_the_flipped_flag_matches_the_engine(self, rich_deal):
+        """And the number it produces is the engine's, not merely non-zero."""
+        swept = self._sweeping_deal(rich_deal).model_copy(deep=True)
+        swept.tranches[1].sweepable = True
+        swept = Assumptions.model_validate(swept.model_dump())
+
+        path = _write(swept, "sweepon.xlsx")
+        value, _, wb = _recalculate(path)
+        junior = [r[0].row for r in wb["Model"].iter_rows(min_col=1, max_col=1)
+                  if r[0].value == "Cash sweep"][-1]
+
+        result = run_lbo(swept)
+        name = swept.tranches[1].name
+        for i, year in enumerate(result.years):
+            c = chr(ord("B") + i)
+            assert -value("Model", f"{c}{junior}") == pytest.approx(
+                year.tranches[name].sweep_repayment, abs=1e-4), f"year {year.year}"
+
+
+class TestTheRoundTripKeepsTheEvents:
+    """Exporting a deal and uploading it back unchanged must return the SAME
+    deal. It did not: the reader had no notion of recaps, injections or
+    divestitures, so HCA came back with its $4.3bn recap silently gone and
+    Hilton came back as an unfinanceable structure — the site rejecting its own
+    artefact, with no warning on either."""
+
+    def _round_trip(self, deal, name, tmp_path):
+        from lbo_engine.workbook_read import read_workbook
+
+        path = str(tmp_path / f"{name}.xlsx")
+        build_workbook(deal).save(path)
+        return read_workbook(path)
+
+    def test_a_recap_survives(self, eventful_deal, tmp_path):
+        back = self._round_trip(eventful_deal, "recap", tmp_path)
+        assert len(back.recaps) == len(eventful_deal.recaps)
+        assert back.recaps[0].year == eventful_deal.recaps[0].year
+
+    def test_an_injection_survives(self, eventful_deal, tmp_path):
+        back = self._round_trip(eventful_deal, "inject", tmp_path)
+        assert len(back.injections) == len(eventful_deal.injections)
+        assert back.injections[0].amount == pytest.approx(
+            eventful_deal.injections[0].amount)
+
+    def test_a_divestiture_survives(self, eventful_deal, tmp_path):
+        back = self._round_trip(eventful_deal, "divest", tmp_path)
+        assert len(back.divestitures) == len(eventful_deal.divestitures)
+
+    def test_the_returns_are_unchanged_by_the_trip(self, eventful_deal, tmp_path):
+        """The test that actually matters. Field counts can match while the
+        deal has quietly become a different one."""
+        back = self._round_trip(eventful_deal, "same", tmp_path)
+        original, returned = run_lbo(eventful_deal), run_lbo(back)
+        assert returned.moic == pytest.approx(original.moic, rel=1e-6)
+        assert sponsor_irr(returned) == pytest.approx(
+            sponsor_irr(original), rel=1e-6)
+
+    def test_a_deal_with_no_events_still_round_trips_clean(self, rich_deal, tmp_path):
+        """An empty event row must read as "nothing happened", not as an event
+        of zero — a DividendRecap(amount=0) would be rejected outright."""
+        back = self._round_trip(rich_deal, "quiet", tmp_path)
+        assert back.recaps == [] and back.injections == [] and back.divestitures == []

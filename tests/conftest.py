@@ -76,3 +76,27 @@ def rich_deal() -> Assumptions:
         hold_years=5,
         exit_multiple=11.5,
     )
+
+
+@pytest.fixture
+def eventful_deal(rich_deal) -> Assumptions:
+    """`rich_deal` plus the mid-hold capital events, because their absence hid a
+    real bug for weeks.
+
+    The load-bearing workbook test recalculates the export and compares it to the
+    engine — but it ran on `rich_deal`, which has no recap, no injection and no
+    divestiture. So the Excel Returns sheet could strike MOIC on the closing
+    cheque alone, ignore a $4.3bn dividend, and pass every test in the suite.
+    A fixture that exercises only the quiet path certifies only the quiet path.
+
+    Deliberately a separate fixture rather than a change to `rich_deal`: that one
+    is the invariant fixture, and identities are easier to reason about on a deal
+    where nothing happens.
+    """
+    from lbo_engine import DividendRecap, Divestiture, EquityInjection
+
+    d = rich_deal.model_copy(deep=True)
+    d.recaps = [DividendRecap(year=3, amount=45.0)]
+    d.injections = [EquityInjection(year=2, amount=20.0, label="Sponsor support")]
+    d.divestitures = [Divestiture(year=4, proceeds=60.0, revenue_removed=40.0)]
+    return d

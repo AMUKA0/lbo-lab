@@ -23,6 +23,9 @@ from lbo_engine.assumptions import (
     Assumptions,
     Covenants,
     DebtTranche,
+    Divestiture,
+    DividendRecap,
+    EquityInjection,
     InterestLimitation,
     OperatingAssumptions,
     RevolverAssumptions,
@@ -175,6 +178,56 @@ def read_workbook(source) -> Assumptions:
             mandatory_amort_pct=amort, sweepable=bool(sweepable) if sweepable is not None else True,
         ))
 
+    # --- mid-hold capital events -------------------------------------------
+    #
+    # The exporter writes these as per-year rows and the reader used to ignore
+    # them entirely, which made the round trip lossy in the worst possible way:
+    # exporting HCA and uploading it back unchanged returned a DIFFERENT deal —
+    # the $4.3bn recap silently gone, no warning — and Hilton came back as an
+    # unfinanceable structure, because the rescue capital it depends on did not
+    # survive the trip. The site rejected its own artefact.
+    #
+    # Read as amounts rather than as intentions: the sheet holds the quantum the
+    # engine resolved, which is what an analyst sees and can override.
+    def event_years(name: str) -> list[tuple[int, float]]:
+        """Non-zero cells of a per-year event row, as (year, amount)."""
+        if location(name) is None:
+            return []
+        values = series(name)
+        if values is None:
+            return []
+        # `series` collapses an all-identical row to one entry, which for an
+        # event row of zeros means "nothing happened".
+        if len(values) == 1 and values[0] == 0:
+            return []
+        return [(i + 1, v) for i, v in enumerate(values) if abs(v) > 1e-9]
+
+    recaps = [
+        DividendRecap(year=year, amount=amount)
+        for year, amount in event_years("Recap_Raised")
+    ]
+    injections = [
+        EquityInjection(year=year, amount=amount, label="Sponsor support")
+        for year, amount in event_years("Injection_Cash")
+    ]
+    retired = dict(event_years("Injection_Retired"))
+    for injection in injections:
+        if injection.year in retired:
+            injection.debt_retired = retired[injection.year]
+    # Debt bought back with no fresh cash is still an injection.
+    for year, amount in retired.items():
+        if not any(i.year == year for i in injections):
+            injections.append(EquityInjection(
+                year=year, amount=0.0, debt_retired=amount, label="Sponsor support"))
+
+    divestitures = [
+        # The exported row is proceeds NET of costs and tax, so the fee and gain
+        # are already inside it. Re-applying them would deduct twice.
+        Divestiture(year=year, proceeds=amount, fee_pct=0.0, taxable_gain=0.0,
+                    revenue_removed=dict(event_years("Divest_Revenue")).get(year, 0.0))
+        for year, amount in event_years("Divest_Net")
+    ]
+
     revolver_rate = _scalar_or_path("Revolver_Rate")
     growth = series("Revenue_Growth")
     margin = series("EBITDA_Margin")
@@ -254,6 +307,9 @@ def read_workbook(source) -> Assumptions:
             nol_limit_pct=fields["NOL_Limit"],
             interest_limitation=limitation,
             covenants=covenants,
+            recaps=recaps,
+            divestitures=divestitures,
+            injections=injections,
             minimum_cash=fields["Minimum_Cash"],
             cash_deposit_rate=fields["Deposit_Rate"],
             pik_election_headroom=0.0 if headroom is None else headroom,

@@ -21,6 +21,7 @@ import pytest
 from api.case_studies import CASES
 from lbo_engine import run_lbo
 from lbo_engine.partial import survivable_years, truncate
+from lbo_engine.returns import sponsor_irr
 from lbo_engine.workbook import build_partial_workbook, workbook_bytes
 
 openpyxl = pytest.importorskip("openpyxl")
@@ -153,6 +154,28 @@ class TestTheFileAgreesWithThePage:
             ):
                 assert value("Model", f"{c}{row('Model', label)}") == pytest.approx(
                     expected, abs=1e-3), f"{case.slug}/{name} year {year.year} {label}"
+
+    @pytest.mark.parametrize("case,name,deal", COLUMNS)
+    def test_the_returns_recalculate_to_the_engine(self, case, name, deal, tmp_path):
+        """The test whose absence let a real error ship.
+
+        The schedule check above compares EBITDA, tax, cash and net debt — and
+        every one of those agreed while the Returns sheet reported 2.27x on HCA
+        against the engine's 2.95x, because MOIC was struck on the closing
+        cheque and never saw the $4.3bn recap dividend. Checking the schedule is
+        not checking the answer.
+
+        Skipped for a column that breaks: a partial export deliberately carries
+        no returns at all, which is its own test elsewhere.
+        """
+        if not _survives(deal.model_copy(update={"interest_on_average_balance": False})):
+            pytest.skip("a broken column exports no returns by design")
+
+        value, row, result = self._recalculate(deal, tmp_path, f"{case.slug}-{name}-ret")
+        assert value("Returns", f"B{row('Returns', 'MOIC')}") == pytest.approx(
+            result.moic, abs=1e-4), f"{case.slug}/{name} MOIC"
+        assert value("Returns", f"B{row('Returns', 'IRR')}") == pytest.approx(
+            sponsor_irr(result), abs=1e-4), f"{case.slug}/{name} IRR"
 
     @pytest.mark.parametrize("case,name,deal", COLUMNS)
     def test_the_entry_equity_matches_the_published_cheque(self, case, name, deal, tmp_path):
