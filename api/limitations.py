@@ -59,15 +59,21 @@ LIMITATIONS: list[Limitation] = [
         direction="understates",
     ),
     Limitation(
-        title="Annual periods and fixed rates",
+        title="Annual periods, and a rate path you have to supply",
         detail=(
             "Real facilities pay quarterly on a floating base plus a margin, and "
-            "a company can breach a covenant in Q2 and be back inside by Q4. "
-            "Annual periodicity smooths that away, and fixed rates mean a rate "
-            "path is a manual re-run rather than an input. Both are the right "
-            "screening conventions and both cost precision."
+            "a company can breach a covenant in Q2 and be back inside by Q4; "
+            "annual periodicity smooths that away. Coupons now accept a per-year "
+            "path, so a floating structure can be modelled — but the DEFAULT is "
+            "still a flat rate, and a flat rate held through a rate cycle is not "
+            "a neutral simplification. On Hilton's realised column, 200bp is "
+            "worth about 0.46× of MOIC: 15% of the answer, and the same order as "
+            "the caveat that page flags most prominently. Every case here is a "
+            "2006–07 vintage carried through the collapse of LIBOR to zero on "
+            "largely floating paper, so leaving the coupon flat understates them "
+            "systematically."
         ),
-        direction="neutral",
+        direction="understates",
     ),
     Limitation(
         title="No §382 limitation on acquired losses",

@@ -103,6 +103,20 @@ def read_workbook(source) -> Assumptions:
         value = wb[sheet][ref.replace("$", "")].value
         return str(value) if value is not None else None
 
+    def _scalar_or_path(name: str) -> float | list[float] | None:
+        """One value, or a row of them, depending on what the workbook holds."""
+        loc = location(name)
+        if loc is None:
+            problems.append(Problem(name, None, f"{name} is missing from the workbook"))
+            return None
+        _, ref = loc
+        if ":" not in ref:
+            return number(name)
+        values = series(name)
+        if values is None:
+            return None
+        return values[0] if len(values) == 1 else values
+
     def series(name: str) -> list[float] | None:
         """A per-year row, read as a range."""
         loc = location(name)
@@ -142,7 +156,10 @@ def read_workbook(source) -> Assumptions:
     for i in indices:
         name = text(f"T{i}_Name") or f"Tranche {i}"
         turns = number(f"T{i}_Turns")
-        rate = number(f"T{i}_Rate")
+        # A coupon may be a scalar or a per-year path, and the sheet says which
+        # by how many cells the name covers. Reading it as a scalar would take
+        # year one and silently discard the rest of the curve.
+        rate = _scalar_or_path(f"T{i}_Rate")
         pik = number(f"T{i}_PIK")
         amort = number(f"T{i}_Amort")
         sweepable = number(f"T{i}_Sweepable", required=False)
@@ -158,6 +175,7 @@ def read_workbook(source) -> Assumptions:
             mandatory_amort_pct=amort, sweepable=bool(sweepable) if sweepable is not None else True,
         ))
 
+    revolver_rate = _scalar_or_path("Revolver_Rate")
     growth = series("Revenue_Growth")
     margin = series("EBITDA_Margin")
     hold = number("Hold_Years")
@@ -165,7 +183,7 @@ def read_workbook(source) -> Assumptions:
     fields = {
         k: number(k) for k in (
             "Entry_EBITDA", "Entry_Multiple", "Entry_Revenue", "DA_Pct", "Capex_Pct",
-            "NWC_Pct", "Tax_Rate", "NOL_Limit", "Revolver_Commitment", "Revolver_Rate",
+            "NWC_Pct", "Tax_Rate", "NOL_Limit", "Revolver_Commitment",
             "Undrawn_Fee", "Minimum_Cash", "Deposit_Rate", "Sweep_Pct", "Txn_Fee_Pct", "Fin_Fee_Pct",
             "Fee_Tenor", "Exit_Fee_Pct", "Exit_Multiple",
         )
@@ -226,7 +244,7 @@ def read_workbook(source) -> Assumptions:
             tranches=tranches,
             revolver=RevolverAssumptions(
                 commitment=fields["Revolver_Commitment"],
-                cash_rate=fields["Revolver_Rate"],
+                cash_rate=revolver_rate,
                 undrawn_fee=fields["Undrawn_Fee"],
             ),
             transaction_fee_pct_ev=fields["Txn_Fee_Pct"],

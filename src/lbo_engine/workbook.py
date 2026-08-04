@@ -94,6 +94,34 @@ def _allocate(pool: str, taken: list[str], capacity: str, negative: bool = True)
     return f"={sign}MIN(MAX({pool}-({already}),0),{capacity})"
 
 
+def _coupon_ref(key: str, rate_rows: dict[str, int], column: str) -> str:
+    """This year's coupon, whichever shape it was exported in.
+
+    A flat coupon is a named scalar; a floating one is a row on Inputs. The
+    Model sheet asks the same question either way, so adding a rate path did not
+    require a second set of interest formulas — which is exactly the trap that
+    makes a formula export drift from the engine.
+    """
+    if key in rate_rows:
+        return f"Inputs!{column}{rate_rows[key]}"
+    name = "Revolver_Rate" if key == "revolver" else f"{key}_Rate"
+    return name
+
+
+def _rate_row(inp, wb, row: int, text: str, values: list[float], name: str,
+              years: int, label, Font, PatternFill, DefinedName) -> int:
+    """A per-year coupon, as a blue input row with a named range over it."""
+    label(inp, row, text, 1)
+    for i in range(years):
+        cell = inp.cell(row=row, column=2 + i, value=values[i] if i < len(values) else values[-1])
+        cell.font = Font(color=_BLUE, bold=True)
+        cell.fill = PatternFill("solid", fgColor=_INPUT_BG)
+        cell.number_format = '0.00%'
+    end = chr(ord("B") + years - 1)
+    wb.defined_names.add(DefinedName(name, attr_text=f"Inputs!$B${row}:${end}${row}"))
+    return row
+
+
 def _money(ws, cell: str) -> None:
     ws[cell].number_format = '#,##0.0;(#,##0.0)'
 
@@ -132,6 +160,12 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
     wb.calculation.iterate = a.interest_on_average_balance
     wb.calculation.iterateCount = 200
     wb.calculation.iterateDelta = 1e-10
+
+    # slug → the Inputs row holding that coupon's per-year path, for coupons
+    # that float. A flat coupon stays a single named cell and is absent here.
+    # Declared up front because the tranche block fills it while walking the
+    # stack and the Model sheet reads it long afterwards.
+    rate_rows: dict[str, int] = {}
 
     thin = Side(style="thin", color=_RULE)
 
@@ -258,7 +292,18 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
         rows["turns"] = put(r, "Leverage (turns of EBITDA)", t.leverage_turns,
                             f"{slug}_Turns", '0.00"x"')
         r += 1
-        rows["cash"] = put(r, "Cash coupon", t.cash_rate, f"{slug}_Rate", '0.00%'); r += 1
+        if isinstance(t.cash_rate, list):
+            # A floating coupon. Written as a row so an analyst can shape a rate
+            # path in the sheet — which is the whole point of exporting it: the
+            # single most valuable thing to flex on a 2007 vintage is what
+            # happened to LIBOR, and a scalar cell cannot express it.
+            rate_rows[slug] = _rate_row(
+                inp, wb, r, "Cash coupon (by year)", t.cash_rate, f"{slug}_Rate",
+                years, label, Font, PatternFill, DefinedName)
+            r += 1
+        else:
+            rows["cash"] = put(r, "Cash coupon", t.cash_rate, f"{slug}_Rate", '0.00%')
+            r += 1
         rows["pik"] = put(r, "PIK rate", t.pik_rate, f"{slug}_PIK", '0.00%'); r += 1
         rows["amort"] = put(r, "Mandatory amortisation (% of original)", t.mandatory_amort_pct,
                             f"{slug}_Amort", '0.0%'); r += 1
@@ -275,7 +320,14 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
 
     head(inp, r, "Revolver & cash policy"); r += 1
     put(r, "Revolver commitment ($m)", a.revolver.commitment, "Revolver_Commitment", '#,##0.0'); r += 1
-    put(r, "Revolver rate", a.revolver.cash_rate, "Revolver_Rate", '0.00%'); r += 1
+    if isinstance(a.revolver.cash_rate, list):
+        rate_rows["revolver"] = _rate_row(
+            inp, wb, r, "Revolver rate (by year)", a.revolver.cash_rate,
+            "Revolver_Rate", years, label, Font, PatternFill, DefinedName)
+        r += 1
+    else:
+        put(r, "Revolver rate", a.revolver.cash_rate, "Revolver_Rate", '0.00%')
+        r += 1
     put(r, "Undrawn commitment fee", a.revolver.undrawn_fee, "Undrawn_Fee", '0.00%'); r += 1
     put(r, "Minimum cash ($m)", a.minimum_cash, "Minimum_Cash", '#,##0.0'); r += 1
     put(r, "Deposit rate on cash", a.cash_deposit_rate, "Deposit_Rate", '0.00%'); r += 1
@@ -581,7 +633,8 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
         for i in range(years):
             if tr["toggle"]:
                 elected = event_ref(f"T{position + 1}_Elected").format(c=col(i))
-                rate = (f"IF({elected}=1,{slug}_PIK+{slug}_Rate+{tr['premium']},{slug}_PIK)")
+                coupon = _coupon_ref(slug, rate_rows, col(i))
+                rate = (f"IF({elected}=1,{slug}_PIK+{coupon}+{tr['premium']},{slug}_PIK)")
             else:
                 rate = f"{slug}_PIK"
             c = model.cell(row=m, column=2 + i, value=f"={col(i)}{tr['open_row']}*{rate}")
@@ -671,7 +724,8 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
             # test; see tests/test_workbook.py.
             basis = (f"AVERAGE({col(i)}{tr['open_row']},{col(i)}{tr['close_row']})"
                      if a.interest_on_average_balance else f"{col(i)}{tr['open_row']}")
-            c = model.cell(row=m, column=2 + i, value=f"={slug}_Rate*{basis}")
+            coupon = _coupon_ref(slug, rate_rows, col(i))
+            c = model.cell(row=m, column=2 + i, value=f"={coupon}*{basis}")
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["int_row"] = m; m += 2
 
@@ -758,7 +812,8 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
     for i in range(years):
         basis = (f"AVERAGE({col(i)}{rev_open},{col(i)}{rev_close})"
                  if a.interest_on_average_balance else f"{col(i)}{rev_open}")
-        c = model.cell(row=m, column=2 + i, value=f"=Revolver_Rate*{basis}")
+        coupon = _coupon_ref("revolver", rate_rows, col(i))
+        c = model.cell(row=m, column=2 + i, value=f"={coupon}*{basis}")
         c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
     m += 2
 

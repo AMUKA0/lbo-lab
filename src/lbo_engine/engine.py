@@ -45,8 +45,14 @@ _MAX_ITERATIONS = 200
 _TOLERANCE = 1e-10
 
 
-def _rates(t, elected: frozenset[str], year_no: int = 1) -> tuple[float, float]:
+def _rates(t, elected: frozenset[str], year_no: int = 1,
+           coupon: float | None = None) -> tuple[float, float]:
     """Effective (cash, PIK) rates for a tranche given this year's elections.
+
+    `coupon` is this year's cash rate off the tranche's path. Passing it in
+    rather than reading `t.cash_rate` is what lets a coupon float: the caller
+    knows the year, and the rate schedule is resolved once per run rather than
+    per iteration of the interest solve.
 
     Electing the toggle moves the whole cash coupon into PIK and steps the rate
     up — the lender is compensated for waiting. Any unconditional `pik_rate`
@@ -56,6 +62,8 @@ def _rates(t, elected: frozenset[str], year_no: int = 1) -> tuple[float, float]:
     from the year after it rolled: new money is priced at the market of the day
     it is raised, not the market the original deal was struck in.
     """
+    if coupon is None:  # a scalar coupon, or a caller that predates the path
+        coupon = t.cash_rate if isinstance(t.cash_rate, (int, float)) else t.cash_rate[0]
     rolled = (
         t.maturity_years is not None
         and t.refinance_at_maturity
@@ -63,8 +71,8 @@ def _rates(t, elected: frozenset[str], year_no: int = 1) -> tuple[float, float]:
     )
     spread = t.refinancing_spread if rolled else 0.0
     if t.name in elected:
-        return 0.0, t.pik_rate + t.cash_rate + spread + t.pik_toggle_premium
-    return t.cash_rate + spread, t.pik_rate
+        return 0.0, t.pik_rate + coupon + spread + t.pik_toggle_premium
+    return coupon + spread, t.pik_rate
 
 
 @dataclass
@@ -275,6 +283,10 @@ def run_lbo(a: Assumptions) -> LBOResult:
     # capital release — that cash went with the business.
     inorganic_decline = 0.0
 
+    # Rate paths resolved once, not per iteration of the interest solve.
+    rate_paths = {t.name: a.rate_schedule(t) for t in a.tranches}
+    revolver_path = a.rate_schedule(None)
+
     leverage_ceiling = a.covenant_schedule("net_leverage_ceiling")
     coverage_floor = a.covenant_schedule("interest_coverage_floor")
 
@@ -322,6 +334,7 @@ def run_lbo(a: Assumptions) -> LBOResult:
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening, interest_cf_opening, coverage_floor,
+            {t.name: rate_paths[t.name][i] for t in a.tranches}, revolver_path[i],
         )
         row.equity_injected = injected
         row.debt_retired = retired
@@ -518,6 +531,8 @@ def _solve_year(
     nol_opening: float,
     interest_cf_opening: float,
     coverage_floor: list[float] | None = None,
+    coupons: dict[str, float] | None = None,
+    revolver_rate: float = 0.0,
 ) -> YearRow:
     """Resolve one year, electing the PIK toggle junior-first.
 
@@ -543,6 +558,9 @@ def _solve_year(
     Each attempt re-runs the full iterative interest solve, since changing a
     coupon changes the circularity it sits inside.
     """
+    if coupons is None:
+        coupons = {t.name: a.rate_schedule(t)[year_no - 1] for t in a.tranches}
+
     eligible = [t.name for t in a.tranches if t.pik_toggle]
     failure: ValueError | None = None
     survivors: list[tuple[frozenset[str], YearRow]] = []
@@ -554,7 +572,7 @@ def _solve_year(
             row = _solve_year_with(
                 a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
                 tranche_original, tranche_opening, revolver_opening, opening_cash,
-                nol_opening, interest_cf_opening, elected,
+                nol_opening, interest_cf_opening, elected, coupons, revolver_rate,
             )
         except ValueError as exc:
             failure = exc
@@ -624,14 +642,17 @@ def _solve_year_with(
     nol_opening: float,
     interest_cf_opening: float,
     elected: frozenset[str],
+    coupons: dict[str, float],
+    revolver_rate: float,
 ) -> YearRow:
     """Iteratively resolve the interest ↔ debt-balance circularity for one year,
     given a fixed set of toggle elections."""
     # Seed: interest on opening balances (first pass of the iterative calc).
     cash_interest = {
-        t.name: _rates(t, elected, year_no)[0] * tranche_opening[t.name] for t in a.tranches
+        t.name: _rates(t, elected, year_no, coupons[t.name])[0] * tranche_opening[t.name]
+        for t in a.tranches
     }
-    revolver_interest = a.revolver.cash_rate * revolver_opening
+    revolver_interest = revolver_rate * revolver_opening
     interest_income = a.cash_deposit_rate * opening_cash
 
     if not a.interest_on_average_balance:
@@ -641,7 +662,7 @@ def _solve_year_with(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening, interest_cf_opening, cash_interest, revolver_interest,
-            interest_income, elected,
+            interest_income, elected, coupons,
         )
         row.interest_iterations = 1
         return row
@@ -653,7 +674,7 @@ def _solve_year_with(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
             nol_opening, interest_cf_opening, cash_interest, revolver_interest,
-            interest_income, elected,
+            interest_income, elected, coupons,
         )
         # Recompute interest on average balances given the resulting closings.
         # Cash is inside the same circularity as the debt: income raises cash,
@@ -661,12 +682,12 @@ def _solve_year_with(
         # second solve.
         interest_income = a.cash_deposit_rate * 0.5 * (opening_cash + row.closing_cash)
         cash_interest = {
-            t.name: _rates(t, elected, year_no)[0]
+            t.name: _rates(t, elected, year_no, coupons[t.name])[0]
             * 0.5
             * (tranche_opening[t.name] + row.tranches[t.name].closing)
             for t in a.tranches
         }
-        revolver_interest = a.revolver.cash_rate * 0.5 * (revolver_opening + row.revolver_closing)
+        revolver_interest = revolver_rate * 0.5 * (revolver_opening + row.revolver_closing)
 
         total = sum(cash_interest.values()) + revolver_interest - interest_income
         if abs(total - prev_total_interest) < _TOLERANCE:
@@ -700,11 +721,15 @@ def _build_year(
     revolver_interest: float,
     interest_income: float,
     elected: frozenset[str] = frozenset(),
+    coupons: dict[str, float] | None = None,
 ) -> YearRow:
     """One pass of the year's income statement, cash flow and debt waterfall
     for a GIVEN interest charge and set of toggle elections."""
+    if coupons is None:
+        coupons = {t.name: a.rate_schedule(t)[year_no - 1] for t in a.tranches}
     pik_accrual = {
-        t.name: _rates(t, elected, year_no)[1] * tranche_opening[t.name] for t in a.tranches
+        t.name: _rates(t, elected, year_no, coupons[t.name])[1] * tranche_opening[t.name]
+        for t in a.tranches
     }
     undrawn = max(a.revolver.commitment - revolver_opening, 0.0)
     undrawn_fee = a.revolver.undrawn_fee * undrawn

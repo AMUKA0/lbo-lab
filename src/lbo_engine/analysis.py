@@ -112,6 +112,29 @@ def _shift_tax(a: Assumptions, d: float) -> None:
     a.operating.tax_rate = min(max(a.operating.tax_rate + d, 0.0), 0.6)
 
 
+def _shift_cost_of_debt(a: Assumptions, d: float) -> None:
+    """Every coupon and the revolver, in parallel.
+
+    The driver a review found missing, and its absence was not cosmetic: on a
+    five-to-twelve-turn structure ±100bp of credit spread is a larger and more
+    likely swing than ±5 points of tax rate, and unlike growth or margin it is
+    the one input the sponsor does not control. Leaving it out meant the app's
+    answer to "what moves this deal?" systematically omitted the credit market.
+
+    Applied to the whole stack rather than one tranche, because spreads move
+    together — a market that reprices a term loan reprices the notes beside it.
+    """
+    for tranche in a.tranches:
+        if isinstance(tranche.cash_rate, list):
+            tranche.cash_rate = [min(max(r + d, 0.0), 0.99) for r in tranche.cash_rate]
+        else:
+            tranche.cash_rate = min(max(tranche.cash_rate + d, 0.0), 0.99)
+    if isinstance(a.revolver.cash_rate, list):
+        a.revolver.cash_rate = [min(max(r + d, 0.0), 0.99) for r in a.revolver.cash_rate]
+    else:
+        a.revolver.cash_rate = min(max(a.revolver.cash_rate + d, 0.0), 0.99)
+
+
 # (label, mutator, downside delta, upside delta) — swings sized to be
 # comparable real-world uncertainties, not equal percentages.
 TORNADO_DRIVERS = [
@@ -122,6 +145,8 @@ TORNADO_DRIVERS = [
     ("Senior leverage (±0.5×)", _shift_senior_leverage, -0.5, 0.5),
     ("Capex (±100bps of revenue)", _shift_capex, 0.01, -0.01),  # more capex is the downside
     ("Tax rate (±5pts)", _shift_tax, 0.05, -0.05),
+    # Paying MORE for debt is the downside, hence the sign.
+    ("Cost of debt (±100bps)", _shift_cost_of_debt, 0.01, -0.01),
 ]
 
 

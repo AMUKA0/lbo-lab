@@ -30,7 +30,19 @@ class DebtTranche(BaseModel):
 
     name: str
     leverage_turns: float = Field(gt=0, description="Tranche size in turns of entry EBITDA")
-    cash_rate: float = Field(ge=0, lt=1, description="Annual cash coupon, e.g. 0.055 for 5.5%")
+    # A scalar holds the coupon flat; a list is a per-year path, exactly as
+    # revenue growth and margin already work.
+    #
+    # The path matters more than it looks. Every deal in the case library is a
+    # 2006-07 vintage carried through the collapse of LIBOR to zero, and the
+    # paper was largely floating — Hilton's CMBS and mezzanine stack and Dollar
+    # General's L+275 term loan both repriced down by 400-500bp within eighteen
+    # months of close. Holding the 2007 coupon for the whole hold is worth about
+    # 0.46x of Hilton's realised MOIC, which is 15% of the answer and the same
+    # order as the caveat that case flags most prominently.
+    cash_rate: float | list[float] = Field(
+        description="Annual cash coupon, e.g. 0.055 for 5.5%; scalar or per-year path",
+    )
     pik_rate: float = Field(default=0.0, ge=0, lt=1, description="Annual PIK rate accreting to principal")
     mandatory_amort_pct: float = Field(
         default=0.0, ge=0, le=1,
@@ -87,7 +99,8 @@ class RevolverAssumptions(BaseModel):
     """Revolving credit facility: drawn to cover shortfalls, repaid first."""
 
     commitment: float = Field(default=0.0, ge=0, description="Maximum facility size in currency")
-    cash_rate: float = Field(default=0.0, ge=0, lt=1)
+    cash_rate: float | list[float] = Field(
+        default=0.0, description="Drawn rate; scalar or per-year path")
     undrawn_fee: float = Field(default=0.0, ge=0, lt=1, description="Commitment fee on the undrawn portion")
 
 
@@ -443,6 +456,32 @@ class Assumptions(BaseModel):
     # Exit
     hold_years: int = Field(ge=1, le=15)
     exit_multiple: float = Field(gt=0, description="Exit EV / EBITDA")
+
+    def rate_schedule(self, tranche: DebtTranche | None = None) -> list[float]:
+        """A tranche's cash coupon per year, or the revolver's when given None."""
+        source = self.revolver if tranche is None else tranche
+        name = "revolver rate" if tranche is None else f"{source.name} cash rate"
+        return _as_schedule(source.cash_rate, self.hold_years, name)
+
+    @model_validator(mode="after")
+    def _validate_rate_paths(self) -> "Assumptions":
+        """Rate paths must be the right length and inside the same bounds a
+        scalar coupon is. Pydantic checks `ge`/`lt` on a bare float; a list
+        slips past that, so the bounds are asserted here rather than trusted."""
+        for tranche in self.tranches:
+            for rate in self.rate_schedule(tranche):
+                if not 0 <= rate < 1:
+                    raise ValueError(
+                        f"{tranche.name}: a cash rate of {rate} is outside 0-100%. "
+                        "Rates are decimals — 0.055 for 5.5%."
+                    )
+        for rate in self.rate_schedule(None):
+            if not 0 <= rate < 1:
+                raise ValueError(
+                    f"revolver: a cash rate of {rate} is outside 0-100%. "
+                    "Rates are decimals — 0.055 for 5.5%."
+                )
+        return self
 
     @field_validator("tranches")
     @classmethod

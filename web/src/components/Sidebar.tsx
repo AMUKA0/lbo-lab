@@ -286,9 +286,10 @@ export function Sidebar({
           suffix="$m"
           onChange={(v) => edit((n) => (n.revolver.commitment = v))}
         />
-        <SliderField
+        <ScheduleField
           label="Revolver rate"
           value={a.revolver.cash_rate}
+          years={a.hold_years}
           min={0}
           max={0.2}
           step={0.0025}
@@ -630,6 +631,9 @@ export function Sidebar({
                 n.covenants.net_leverage_ceiling = resize(n.covenants.net_leverage_ceiling, v);
               if (n.covenants.interest_coverage_floor !== null)
                 n.covenants.interest_coverage_floor = resize(n.covenants.interest_coverage_floor, v);
+              // Coupons are schedules too now.
+              n.tranches.forEach((t) => (t.cash_rate = resize(t.cash_rate, v)));
+              n.revolver.cash_rate = resize(n.revolver.cash_rate, v);
             })
           }
         />
@@ -712,9 +716,10 @@ function TrancheEditor({
         format={(v) => fmtMult(v, 2)}
         onChange={(v) => onChange((t) => (t.leverage_turns = v))}
       />
-      <SliderField
+      <ScheduleField
         label="Cash coupon"
         value={tranche.cash_rate}
+        years={holdYears}
         min={0}
         max={0.2}
         step={0.0025}

@@ -11,7 +11,10 @@
 export interface DebtTranche {
   name: string;
   leverage_turns: number;
-  cash_rate: number;
+  /** Scalar holds it flat; an array is a per-year path. Every case in the
+   *  library is a 2007 vintage held through ZIRP on largely floating paper, so
+   *  a flat coupon understates them systematically. */
+  cash_rate: number | number[];
   pik_rate: number;
   mandatory_amort_pct: number;
   sweepable: boolean;
@@ -30,7 +33,7 @@ export interface DebtTranche {
 
 export interface RevolverAssumptions {
   commitment: number;
-  cash_rate: number;
+  cash_rate: number | number[];
   undrawn_fee: number;
 }
 
