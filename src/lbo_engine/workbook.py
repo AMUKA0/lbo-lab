@@ -1122,6 +1122,7 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
         _refuse_to_invent_an_exit(wb, ret, chk, a, partial_from, Alignment, Font)
 
     _freeze(inp, su_ws, model, chk)
+    _prepare_for_print(wb, model, years, a)
     return wb
 
 
@@ -1181,6 +1182,57 @@ def _refuse_to_invent_an_exit(wb, ret, chk, a, full, Alignment, Font) -> None:
     for r in range(chk.max_row, 3, -1):
         if "Returns!" in str(chk.cell(row=r, column=2).value or ""):
             chk.delete_rows(r)
+
+
+def _prepare_for_print(wb, model, years: int, a: Assumptions) -> None:
+    """Page setup on every sheet.
+
+    An IC exhibit gets printed. This is a small amount of work and its absence
+    is loud: the first time someone hits Ctrl-P on a model with fourteen year
+    columns and gets column H alone on page four, the file stops being credible
+    regardless of what the numbers say.
+
+    Four decisions, each with a reason:
+
+    * **Landscape and fit-to-one-page-wide for the schedule**, portrait for the
+      narrow sheets. Nothing here is worth splitting a year across a page break.
+    * **Repeating title rows.** A schedule that runs past one page is unreadable
+      without its year headers, and scrolling back is not an option on paper.
+    * **A printed footer carrying the sheet name and page numbers**, because a
+      loose page from a model with five sheets is otherwise unidentifiable.
+    * **Print areas set explicitly**, so a stray value in a far column — an
+      analyst's scratch note, which is exactly what people do — cannot silently
+      drag a blank page into the printout.
+    """
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.properties import PageSetupProperties
+
+    for sheet in wb.worksheets:
+        wide = sheet is model and years > 4
+        sheet.page_setup.orientation = "landscape" if wide else "portrait"
+        sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+        sheet.page_setup.fitToWidth = 1
+        # Zero means "as many pages as it takes" vertically, which is what a
+        # long schedule needs — the alternative shrinks the type until nobody
+        # can read it, which is the classic way this gets done badly.
+        sheet.page_setup.fitToHeight = 0
+        sheet.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        sheet.page_margins.left = sheet.page_margins.right = 0.4
+        sheet.page_margins.top = 0.6
+        sheet.page_margins.bottom = 0.5
+
+        # &L / &R are Excel's own left/right footer codes.
+        sheet.oddFooter.left.text = f"{sheet.title} — LBO model"
+        sheet.oddFooter.left.size = 8
+        sheet.oddFooter.right.text = "Page &[Page] of &[Pages]"
+        sheet.oddFooter.right.size = 8
+
+        last_col = get_column_letter(max(sheet.max_column, 2))
+        sheet.print_area = f"A1:{last_col}{sheet.max_row}"
+
+    # The Model sheet is the one that runs long. Its header block is rows 1-3;
+    # repeating them keeps the years legible on every page.
+    model.print_title_rows = "1:3"
 
 
 def _freeze(*sheets) -> None:

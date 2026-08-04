@@ -412,3 +412,53 @@ class TestMidHoldCapitalEvents:
         """The boundary is gone. Kept as a test so its removal is deliberate."""
         build_workbook(self._with(
             rich_deal, divestitures=self.DIVEST, recaps=self.RECAP, injections=self.INJECT))
+
+
+class TestItPrints:
+    """An IC exhibit gets printed. The absence of page setup is loud: the first
+    time someone hits Ctrl-P and gets one column alone on page four, the file
+    stops being credible regardless of what the numbers say."""
+
+    def test_the_schedule_is_landscape_and_fits_the_page_width(self, rich_deal):
+        wb = build_workbook(rich_deal)
+        model = wb["Model"]
+        assert model.page_setup.orientation == "landscape"
+        assert model.page_setup.fitToWidth == 1
+        # Zero means "as many pages as it takes" downwards. Fitting to one page
+        # vertically would shrink a long schedule until nobody could read it,
+        # which is the classic way this gets done badly.
+        assert model.page_setup.fitToHeight == 0
+        assert model.sheet_properties.pageSetUpPr.fitToPage is True
+
+    def test_a_short_schedule_stays_portrait(self, simple_deal):
+        assert build_workbook(simple_deal)["Model"].page_setup.orientation == "portrait"
+
+    def test_the_year_headers_repeat_on_every_page(self, rich_deal):
+        """A schedule running past one page is unreadable without them, and
+        scrolling back is not an option on paper."""
+        # openpyxl normalises this to absolute row references on write.
+        assert build_workbook(rich_deal)["Model"].print_title_rows == "$1:$3"
+
+    def test_every_sheet_has_a_print_area_and_a_footer(self, rich_deal):
+        wb = build_workbook(rich_deal)
+        for sheet in wb.worksheets:
+            assert sheet.print_area, f"{sheet.title} has no print area"
+            # An explicit area stops a stray value in a far column — an
+            # analyst's scratch note, which is exactly what people do — from
+            # silently dragging a blank page into the printout. openpyxl
+            # qualifies the ref with the sheet name on write.
+            assert "$A$1:" in str(sheet.print_area), sheet.print_area
+            assert sheet.title in (sheet.oddFooter.left.text or "")
+            assert "Page" in (sheet.oddFooter.right.text or "")
+
+    def test_a_partial_workbook_prints_too(self, rich_deal):
+        """The sheet set differs on a partial export — Returns is rebuilt — so
+        the setup has to run after that, not before."""
+        broken = rich_deal.model_copy(deep=True)
+        broken.operating.ebitda_margin = [0.192, 0.19, 0.03, 0.03, 0.03]
+        broken.revolver.commitment = 20.0
+        from lbo_engine.workbook import build_partial_workbook
+
+        wb = build_partial_workbook(broken)
+        for sheet in wb.worksheets:
+            assert sheet.print_area, f"{sheet.title} has no print area"

@@ -3,7 +3,7 @@
 What is planned, what is deliberately not, and the reasoning behind both. Kept
 because a decision without its reasoning gets re-litigated or silently reversed.
 
-Current state: **303 tests**, deployed on Cloud Run, source public.
+Current state: **308 tests**, deployed on Cloud Run, source public.
 
 ---
 
@@ -65,11 +65,13 @@ sweepable — every existing fixture had exactly one — and the revolver was ne
 repaid from divestiture proceeds even though the tranche formulas already
 assumed it had been, so RJR printed a billion of debt that was not there.
 
-### 3.2 Print-ready output
+### 3.2 Print-ready output — done
 
-An IC exhibit gets printed. Page setup, print areas, repeating header rows,
-landscape orientation, sensible page breaks between sheets. Small, and the
-absence of it reads as amateur the first time someone hits Ctrl-P.
+Landscape and fit-to-width for the schedule, portrait for the narrow sheets,
+repeating year headers, explicit print areas, and a footer carrying the sheet
+name and page numbers. Fit-to-height is deliberately left at "as many pages as
+it takes": forcing a long schedule onto one page shrinks the type until nobody
+can read it, which is the usual way this gets done badly.
 
 ### 3.3 What "finished" requires
 
