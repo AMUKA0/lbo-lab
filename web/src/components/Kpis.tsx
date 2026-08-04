@@ -12,8 +12,18 @@ import { fmtMoney, fmtMult, fmtPct } from "../lib/format";
 export function KpiStrip({ run }: { run: RunResult }) {
   const entryLev = run.entry_net_leverage;
   const exitLev = run.exit_net_leverage;
-  const deleveraged = entryLev != null && exitLev != null ? entryLev - exitLev : null;
+  const turnsDown = entryLev != null && exitLev != null ? entryLev - exitLev : null;
   const dividends = run.bridge?.dividends ?? 0;
+
+  // The leverage ratio falls for two quite different reasons, and calling both
+  // "deleveraging" is wrong in a way a reader will quote back at you. Dollar
+  // General's panel said "1.48× of deleveraging" four inches above a bridge
+  // line reading "net debt paydown −$28m": net debt went UP, and every turn of
+  // improvement came from EBITDA growth in the denominator.
+  //
+  // `paydown` is what the business actually repaid, straight off the bridge.
+  const paydown = run.bridge?.deleveraging ?? null;
+  const repaidDebt = paydown != null && paydown > 0;
 
   return (
     <div className="kpi-strip">
@@ -42,15 +52,24 @@ export function KpiStrip({ run }: { run: RunResult }) {
         />
       )}
       <Kpi k="Equity cheque" v={fmtMoney(run.entry_equity)} sub="at close" />
+      {/* Net of cash, unlike the gross figure in the case-page header. Two
+          different numbers with the same name is how a reader ends up
+          comparing one to the other. */}
       <Kpi
-        k="Entry leverage"
+        k="Entry leverage, net"
         v={fmtMult(entryLev, 2)}
-        sub={`${fmtMoney(run.sources_uses.total_debt)} of debt`}
+        sub={`${fmtMoney(run.sources_uses.total_debt)} of debt, less opening cash`}
       />
       <Kpi
-        k="Exit leverage"
+        k="Exit leverage, net"
         v={fmtMult(exitLev, 2)}
-        sub={deleveraged != null ? `${fmtMult(deleveraged, 2)} of deleveraging` : undefined}
+        sub={
+          turnsDown == null
+            ? undefined
+            : repaidDebt
+              ? `${fmtMult(turnsDown, 2)} lower, ${fmtMoney(paydown)} of it repaid`
+              : `${fmtMult(turnsDown, 2)} lower — all of it EBITDA growth, no net repayment`
+        }
       />
       <Kpi
         k="Exit equity"

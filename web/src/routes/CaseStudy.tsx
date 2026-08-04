@@ -22,7 +22,7 @@ import { Flags, KpiStrip } from "../components/Kpis";
 import { LifecycleTimeline } from "../components/Lifecycle";
 import { Card, SectionHead, Skeleton, Tabs } from "../components/primitives";
 import { BridgeTable, CreditTable, ScheduleTable, SourcesUsesTable } from "../components/tables";
-import { fmtMult, fmtPct, NA } from "../lib/format";
+import { fmtMoney, fmtMult, fmtPct, NA } from "../lib/format";
 
 type ColumnId = "underwriting" | "realised";
 
@@ -116,7 +116,10 @@ export function CaseStudy() {
               v={`$${Math.round(data.entry_ebitda).toLocaleString("en-US")}m`}
             />
             <HeadStat k="Entry multiple" v={fmtMult(data.entry_multiple)} />
-            <HeadStat k="Leverage at close" v={`${data.leverage_turns.toFixed(1)}×`} />
+            <HeadStat
+              k="Gross leverage at close"
+              v={`${data.leverage_turns.toFixed(1)}×`}
+            />
           </div>
         </header>
 
@@ -291,7 +294,10 @@ export function CaseStudy() {
               title={`Schedule to the break — years 1 to ${active.survived_years}`}
               note="No exit occurred, so this carries no IRR, MOIC or exit equity. It is the operating and debt-service record up to the point the structure stopped funding itself."
             >
-              <ScheduleTable run={active.partial_run} />
+              <ScheduleTable
+                run={active.partial_run}
+                capApplies={active.assumptions.interest_limitation.enabled}
+              />
             </Card>
             <Card title="Credit statistics" eyebrow="Watch coverage fall">
               <CreditTable credit={active.partial_run.credit} />
@@ -347,7 +353,10 @@ export function CaseStudy() {
               title="Annual schedule"
               note="Line items down, years across — including the NOL roll-forward and the pass count of the interest solve."
             >
-              <ScheduleTable run={active.run} />
+              <ScheduleTable
+                run={active.run}
+                capApplies={active.assumptions.interest_limitation.enabled}
+              />
             </Card>
           </>
         )}
@@ -356,6 +365,69 @@ export function CaseStudy() {
         <Card>
           <p className="prose">{data.could_not_have_known}</p>
         </Card>
+
+        {data.equity_reconciliation && (
+          <>
+            <SectionHead
+              title="The cheque this model writes, against the one they wrote"
+              eyebrow="Read before comparing any multiple"
+            />
+            <p className="prose" style={{ marginBottom: "var(--s4)" }}>
+              This model always funds a larger equity cheque than the deal did, and
+              the reason is structural: the reported enterprise value already nets to
+              the reported equity, and the model then puts fees and opening cash into
+              Uses on top, so the plug absorbs them. It is correct arithmetic and it
+              makes every multiple on this page <em>lower</em> than a like-for-like
+              one. Both are shown, because a modelled multiple landing near a reported
+              one is not corroboration if the denominators differ.
+            </p>
+            <table className="data" style={{ marginBottom: "var(--s7)" }}>
+              <tbody>
+                <tr>
+                  <td>Equity actually written</td>
+                  <td className="num">{fmtMoney(data.equity_reconciliation.reported)}</td>
+                </tr>
+                {data.equity_reconciliation.components.map((c) => (
+                  <tr key={c.label}>
+                    <td style={{ paddingLeft: "var(--s5)" }}>plus {c.label.toLowerCase()}</td>
+                    <td className="num">{fmtMoney(c.value)}</td>
+                  </tr>
+                ))}
+                {Math.abs(data.equity_reconciliation.unexplained) > 1 && (
+                  <tr>
+                    <td style={{ paddingLeft: "var(--s5)" }}>
+                      plus unexplained residual — the gap between the reported
+                      enterprise value and entry EBITDA × entry multiple
+                    </td>
+                    <td className="num">
+                      {fmtMoney(data.equity_reconciliation.unexplained)}
+                    </td>
+                  </tr>
+                )}
+                <tr className="emphasis">
+                  <td>Equity this model funds</td>
+                  <td className="num">{fmtMoney(data.equity_reconciliation.modelled)}</td>
+                </tr>
+                {data.equity_reconciliation.moic_modelled !== null && (
+                  <>
+                    <tr>
+                      <td>MOIC on the modelled cheque</td>
+                      <td className="num">
+                        {fmtMult(data.equity_reconciliation.moic_modelled)}
+                      </td>
+                    </tr>
+                    <tr className="emphasis">
+                      <td>MOIC on the cheque they wrote</td>
+                      <td className="num">
+                        {fmtMult(data.equity_reconciliation.moic_on_reported ?? 0)}
+                      </td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
+          </>
+        )}
 
         {data.column_deltas.length > 0 && (
           <>

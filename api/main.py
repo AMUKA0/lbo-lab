@@ -36,6 +36,7 @@ from lbo_engine.analysis import (
 )
 from lbo_engine.calibration import BENCHMARKS, check_assumptions
 from lbo_engine.returns import sponsor_irr
+from lbo_engine.sources_uses import build_sources_and_uses
 
 from api.case_studies import BY_SLUG, CASES, SOURCES, CaseStudy
 from api.limitations import limitations_payload
@@ -614,6 +615,75 @@ def _column_deltas(case: CaseStudy) -> list[dict]:
     return out
 
 
+def _equity_reconciliation(case: CaseStudy) -> dict | None:
+    """Why the modelled cheque is not the reported one.
+
+    Every case models a LARGER equity cheque than the sponsors actually wrote —
+    between 16% and 21%. The cause is structural and correct in itself: the
+    reported enterprise value already nets to the reported cheque, and this
+    model then puts fees and funded cash into Uses on top of it, so the plug
+    absorbs them.
+
+    It was disclosed on exactly one case out of five. On Hilton that mattered
+    most: the page prints an equity cheque of $6,479m three scrolls below a
+    provenance card reading "$5.6bn", and the modelled 3.13x against a reported
+    3.0x reads as corroboration when it is really two errors of opposite sign
+    cancelling — a denominator 16% too large pushing the multiple down, and
+    $2bn of preferred treated as extinguished pushing it up.
+
+    Derived rather than written per case, for the same reason the column-delta
+    table is: a hand-written disclosure is the one someone forgets on the next
+    case.
+    """
+    if case.reported_equity is None or case.reported_equity <= 0:
+        return None
+
+    su = build_sources_and_uses(case.underwriting)
+    modelled = su.sponsor_equity
+    reported = case.reported_equity
+    components = [
+        {"label": "Transaction fees", "value": su.transaction_fees},
+        {"label": "Financing fees", "value": su.financing_fees},
+        {"label": "Cash funded to the balance sheet", "value": su.cash_to_balance_sheet},
+    ]
+    explained = sum(c["value"] for c in components)
+    return {
+        "reported": reported,
+        "modelled": modelled,
+        "difference": modelled - reported,
+        "pct": (modelled - reported) / reported,
+        "components": components,
+        # What the three components do NOT account for: the residual between
+        # the reported enterprise value and the one implied by entry EBITDA x
+        # entry multiple. Shown rather than hidden, because a reconciliation
+        # that does not reconcile is worse than none.
+        "unexplained": (modelled - reported) - explained,
+        # The multiple struck on the cheque the sponsors actually wrote, beside
+        # the one this model reports. Its absence is why Hilton's modelled 3.13x
+        # against a reported 3.0x read as corroboration: on the reported cheque
+        # the same exit equity is over 4x, and the apparent agreement was two
+        # errors of opposite sign cancelling.
+        **_multiples_on_both_cheques(case, reported),
+    }
+
+
+def _multiples_on_both_cheques(case: CaseStudy, reported: float) -> dict:
+    """MOIC on the modelled cheque and on the reported one, where the realised
+    column reaches an exit. A column that breaks has no multiple at all, and
+    inventing one for the comparison would be the fabrication this project
+    refuses everywhere else."""
+    deal = case.realised or case.underwriting
+    try:
+        result = run_lbo(deal)
+    except ValueError:
+        return {"moic_modelled": None, "moic_on_reported": None}
+    proceeds = result.total_dividends + result.exit_equity
+    return {
+        "moic_modelled": result.moic,
+        "moic_on_reported": proceeds / reported,
+    }
+
+
 def _break_note(case: CaseStudy, column: str, replay: dict) -> dict | None:
     """The account of the year this column breaks, if it breaks.
 
@@ -756,6 +826,7 @@ def case_detail(slug: str) -> dict:
         "could_not_have_known": case.could_not_have_known,
         "model_caveats": case.model_caveats,
         "column_deltas": _column_deltas(case),
+        "equity_reconciliation": _equity_reconciliation(case),
         "provenance": [
             {
                 "label": f.label,

@@ -262,15 +262,25 @@ def exit_year_profile(a: Assumptions) -> pd.DataFrame:
     """IRR and MOIC if the sponsor exited at the end of each year instead of
     the assumed hold, exit multiple unchanged. Shows the shape of the deal in
     time: deleveraging compounds MOIC while the annualisation drags IRR — the
-    classic hold-longer-vs-flip tension."""
-    growth = a.growth_schedule()
-    margin = a.margin_schedule()
+    classic hold-longer-vs-flip tension.
+
+    Capital events scheduled beyond the shortened hold are DROPPED rather than
+    silently ignored, and that distinction matters: a recap in year four cannot
+    have happened if you sold in year three. The engine's own validator rejects
+    an event past the hold, and the previous version of this bypassed it by
+    setting `hold_years` through attribute assignment — so on HCA, whose
+    realised column carries a recap, asking for an early exit produced a run
+    where the recap simply never fired, with no crash and no note. Reusing the
+    shared truncation keeps every per-year schedule consistent too.
+    """
+    from lbo_engine.partial import truncate
+
     records = []
     for k in range(2, a.hold_years + 1):
-        variant = a.model_copy(deep=True)
-        variant.hold_years = k
-        variant.operating.revenue_growth = growth[:k]
-        variant.operating.ebitda_margin = margin[:k]
+        variant = truncate(a, k)
+        variant.recaps = [r for r in a.recaps if r.year <= k]
+        variant.divestitures = [d for d in a.divestitures if d.year <= k]
+        variant.injections = [i for i in a.injections if i.year <= k]
         try:
             res = run_lbo(variant)
             moic = res.moic if res.exit_equity > 0 else float("nan")

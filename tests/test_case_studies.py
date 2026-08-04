@@ -426,3 +426,61 @@ class TestTheLibraryIsNotAHighlightReel:
         about buyouts. Dollar General at $7.3bn is a quarter the size."""
         entry_evs = sorted(c.underwriting.entry_ev for c in CASES)
         assert entry_evs[0] < 0.4 * entry_evs[-1], entry_evs
+
+
+class TestTheEquityChequeIsReconciled:
+    """Every case models a larger equity cheque than the sponsors wrote, because
+    the reported enterprise value already nets to the reported equity and this
+    model puts fees and funded cash into Uses on top. Correct in itself, and it
+    was disclosed on one case out of five — while Hilton printed $6,479m three
+    scrolls below a provenance card reading $5.6bn."""
+
+    @pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+    def test_every_case_states_the_cheque_that_was_written(self, case):
+        assert case.reported_equity and case.reported_equity > 0, case.slug
+
+    @pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+    def test_the_reconciliation_is_served(self, case):
+        from api.main import _equity_reconciliation
+
+        rec = _equity_reconciliation(case)
+        assert rec is not None, case.slug
+        assert rec["modelled"] > rec["reported"], (
+            f"{case.slug}: the model should fund MORE, not less — if this flips, "
+            "the explanation on the page is wrong"
+        )
+
+    @pytest.mark.parametrize("case", CASES, ids=lambda c: c.slug)
+    def test_the_components_explain_most_of_the_gap(self, case):
+        """A reconciliation that does not reconcile is worse than none. The
+        residual is shown on the page, so it only has to be the smaller part."""
+        from api.main import _equity_reconciliation
+
+        rec = _equity_reconciliation(case)
+        explained = sum(c["value"] for c in rec["components"])
+        assert abs(rec["unexplained"]) < explained, (
+            f"{case.slug}: {rec['unexplained']:,.0f} unexplained against "
+            f"{explained:,.0f} explained — the components no longer account for it"
+        )
+
+    def test_hilton_shows_the_like_for_like_multiple(self):
+        """The specific finding. Modelled 3.13x against a reported 3.0x reads as
+        the model validating itself; on the cheque actually written it is over
+        4x, and the apparent agreement was two errors of opposite sign."""
+        from api.main import _equity_reconciliation
+
+        hilton = next(c for c in CASES if c.slug.startswith("hilton"))
+        rec = _equity_reconciliation(hilton)
+        assert rec["moic_on_reported"] > rec["moic_modelled"]
+        assert rec["moic_on_reported"] > 3.9, rec["moic_on_reported"]
+
+    def test_a_broken_column_gets_no_multiple_at_all(self):
+        """TXU and RJR do not reach an exit. Inventing a multiple for the
+        comparison would be the fabrication this project refuses everywhere."""
+        from api.main import _equity_reconciliation
+
+        for slug in ("txu", "rjr"):
+            case = next(c for c in CASES if c.slug.startswith(slug))
+            rec = _equity_reconciliation(case)
+            assert rec["moic_modelled"] is None, slug
+            assert rec["moic_on_reported"] is None, slug

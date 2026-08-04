@@ -568,7 +568,10 @@ function SimulatorBody({
                   eyebrow="Full detail"
                   note="Line items down, years across — the orientation the model would take in Excel. Nothing is summarised away: the NOL roll-forward, the undrawn commitment fee, and the number of passes the interest solve needed are all here."
                 >
-                  <ScheduleTable run={run.data} />
+                  <ScheduleTable
+                    run={run.data}
+                    capApplies={assumptions.interest_limitation.enabled}
+                  />
                 </Card>
               </div>
             )}

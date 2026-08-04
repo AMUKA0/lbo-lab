@@ -76,6 +76,21 @@ LIMITATIONS: list[Limitation] = [
         direction="understates",
     ),
     Limitation(
+        title="No purchase accounting or asset step-up",
+        detail=(
+            "An LBO creates a new basis: assets and intangibles are written up to "
+            "the price paid, and the extra depreciation and amortisation that "
+            "follows shelters cash tax for years. Here D&A is a flat percentage of "
+            "revenue in every case, so the step-up never appears. It is the tax "
+            "consequence that shows up in the first year of every real deal, and "
+            "it is the one this model does not have — while §163(j), §172(a), the "
+            "2022 ATI basis change and indefinite interest carryforwards all are "
+            "modelled. Building it properly needs an opening balance sheet the "
+            "engine does not ask for; saying so costs a paragraph."
+        ),
+        direction="overstates",
+    ),
+    Limitation(
         title="No §382 limitation on acquired losses",
         detail=(
             "An LBO *is* an ownership change, so a target's pre-existing net "

@@ -153,7 +153,18 @@ function Section({
   );
 }
 
-export function ScheduleTable({ run }: { run: RunResult }) {
+export function ScheduleTable({
+  run,
+  capApplies = true,
+}: {
+  run: RunResult;
+  /** Whether §163(j) is switched on for this deal. When it is off the engine
+   *  reports capacity equal to the interest itself, so the rows would print
+   *  "Deductible capacity $419.1m / Interest deducted $419.1m" — a cap that
+   *  does not apply, displayed as though it exactly binds. Every case study
+   *  predates the 2017 Act, so this was showing on four pages out of five. */
+  capApplies?: boolean;
+}) {
   const years = run.years;
 
   const operating: Row[] = [
@@ -176,10 +187,22 @@ export function ScheduleTable({ run }: { run: RunResult }) {
   const tax: Row[] = [
     // §163(j) before the NOL, because that is the order of the statute: the cap
     // fixes the tax base, then carryforwards shelter a share of what is left.
-    { label: "Business interest", get: (y) => y.business_interest, indent: true },
-    { label: "Deductible capacity (§163(j))", get: (y) => y.interest_capacity, indent: true },
-    { label: "Interest deducted", get: (y) => y.interest_deducted, indent: true },
-    { label: "Disallowed, carried forward", get: (y) => y.interest_cf_closing, indent: true },
+    ...(capApplies
+      ? [
+          { label: "Business interest", get: (y: YearRow) => y.business_interest, indent: true },
+          {
+            label: "Deductible capacity (§163(j))",
+            get: (y: YearRow) => y.interest_capacity,
+            indent: true,
+          },
+          { label: "Interest deducted", get: (y: YearRow) => y.interest_deducted, indent: true },
+          {
+            label: "Disallowed, carried forward",
+            get: (y: YearRow) => y.interest_cf_closing,
+            indent: true,
+          },
+        ]
+      : []),
     { label: "Taxable income", get: (y) => y.taxable_income },
     { label: "NOL opening", get: (y) => y.nol_opening, indent: true },
     { label: "NOL used", get: (y) => -y.nol_used, indent: true },
@@ -271,7 +294,15 @@ export function ScheduleTable({ run }: { run: RunResult }) {
         <tbody>
           <Section title="Operating build" rows={operating} years={years} />
           <Section title="Financing charges" rows={financing} years={years} />
-          <Section title="Tax — §163(j), then NOL carryforward" rows={tax} years={years} />
+          <Section
+            title={
+              capApplies
+                ? "Tax — §163(j), then NOL carryforward"
+                : "Tax — NOL carryforward (no §163(j): this deal predates it)"
+            }
+            rows={tax}
+            years={years}
+          />
           <Section title="Cash flow" rows={cashflow} years={years} />
           <Section title="Debt waterfall" rows={waterfall} years={years} />
           <Section title="Closing balances" rows={balances} years={years} />

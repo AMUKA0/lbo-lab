@@ -281,6 +281,19 @@ class CaseStudy:
     could_not_have_known: str
     underwriting: Assumptions
     realised: Assumptions | None
+    # The equity cheque the sponsors actually wrote, in $m.
+    #
+    # Stated rather than parsed out of the provenance card, because the first
+    # version of the reconciliation did parse it and read Hilton's $20.5bn of
+    # DEBT as its equity — the value string is "$20.5bn / $5.6bn". A number this
+    # load-bearing does not belong in prose a regex has to interpret.
+    #
+    # It exists because the model always writes a bigger cheque than the deal
+    # did: the reported enterprise value already nets to the reported equity,
+    # and this model then puts fees and funded cash into Uses on top, so the
+    # plug absorbs them. That is correct, and it was disclosed on one case out
+    # of five.
+    reported_equity: float | None
     provenance: list[Figure]
     model_caveats: list[str]
     outcome: Outcome
@@ -304,6 +317,7 @@ _HILTON_REVENUE = 8162.0  # 2006A revenue
 
 HILTON = CaseStudy(
     slug="hilton-blackstone-2007",
+    reported_equity=5600.0,  # $5.6bn of Blackstone equity
     name="Hilton Hotels",
     sponsor="The Blackstone Group",
     signed="3 July 2007",
@@ -587,6 +601,7 @@ _HCA_REVENUE = 24455.0  # 2005A revenue
 
 HCA = CaseStudy(
     slug="hca-kkr-bain-2006",
+    reported_equity=5300.0,  # $5.3bn across KKR, Bain and MLGPE
     name="HCA",
     sponsor="KKR, Bain Capital, Merrill Lynch Global Private Equity & the Frist family",
     signed="24 July 2006",
@@ -832,6 +847,7 @@ _TXU_REVENUE = 10856.0  # 2006A revenue
 
 TXU = CaseStudy(
     slug="txu-kkr-tpg-2007",
+    reported_equity=8300.0,  # $8.3bn across KKR, TPG and GS
     name="TXU Corp. (Energy Future Holdings)",
     sponsor="KKR, TPG & Goldman Sachs Capital Partners",
     signed="26 February 2007",
@@ -1137,6 +1153,7 @@ _RJR_REVENUE = 16956.0  # FY1988 net sales
 
 RJR = CaseStudy(
     slug="rjr-nabisco-kkr-1989",
+    reported_equity=3200.0,  # ~$3.2bn from KKR's funds
     name="RJR Nabisco",
     sponsor="Kohlberg Kravis Roberts & Co.",
     signed="30 November 1988",
@@ -1538,6 +1555,7 @@ _DG_EBITDA = 748.7     # fiscal 2005: operating profit 561.9 + D&A 186.8
 
 DOLLAR_GENERAL = CaseStudy(
     slug="dollar-general-kkr-2007",
+    reported_equity=2775.0,  # $2,775m across KKR, GS and Citi
     name="Dollar General",
     sponsor="KKR, GS Capital Partners, Citi Private Equity",
     signed="12 March 2007",

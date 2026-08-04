@@ -101,6 +101,24 @@ export interface CaseColumn {
 /** An input that differs between the two columns. Surfaced because "same
  *  structure, fed the operating path" is only worth something if the reader can
  *  see what else moved. */
+/** Why the modelled equity cheque is not the one the sponsors wrote. Every case
+ *  models a larger one, because the reported enterprise value already nets to
+ *  the reported equity and this model puts fees and funded cash into Uses on
+ *  top. Correct in itself, and previously disclosed on one case out of five. */
+export interface EquityReconciliation {
+  reported: number;
+  modelled: number;
+  difference: number;
+  pct: number;
+  components: { label: string; value: number }[];
+  /** What the components do not account for. Shown, because a reconciliation
+   *  that does not reconcile is worse than none. */
+  unexplained: number;
+  moic_modelled: number | null;
+  /** The like-for-like figure: the multiple on the cheque actually written. */
+  moic_on_reported: number | null;
+}
+
 export interface ColumnDelta {
   field: string;
   underwriting: string;
@@ -112,6 +130,7 @@ export interface CaseDetail extends CaseSummary {
   could_not_have_known: string;
   model_caveats: string[];
   column_deltas: ColumnDelta[];
+  equity_reconciliation: EquityReconciliation | null;
   provenance: Figure[];
   sources: SourceRef[];
   underwriting: CaseColumn;
