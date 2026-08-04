@@ -19,6 +19,13 @@ export interface DebtTranche {
    *  structural feature of 2006–07 vintage credit. */
   pik_toggle: boolean;
   pik_toggle_premium: number;
+  /** Years from close at which the balance falls due; null outlives the hold. */
+  maturity_years: number | null;
+  /** Whether the wall is assumed to be rolled. An input, not an engine
+   *  decision — "could this have been refinanced that year" is a market
+   *  judgement, and stating it beats burying a guess. */
+  refinance_at_maturity: boolean;
+  refinancing_spread: number;
 }
 
 export interface RevolverAssumptions {
@@ -58,6 +65,14 @@ export interface EquityInjection {
   label: string;
 }
 
+/** Maintenance covenants. Both null is cov-lite — which is not an omission but
+ *  what the market actually issued from 2006 onwards, and a large part of why
+ *  several famous deals did not default at the moment their ratios fell apart. */
+export interface Covenants {
+  net_leverage_ceiling: number | number[] | null;
+  interest_coverage_floor: number | number[] | null;
+}
+
 export interface InterestLimitation {
   enabled: boolean;
   pct_of_ati: number;
@@ -79,6 +94,7 @@ export interface Assumptions {
   nol_limit_pct: number;
   interest_limitation: InterestLimitation;
   interest_on_average_balance: boolean;
+  covenants: Covenants;
   minimum_cash: number;
   cash_deposit_rate: number;
   cash_sweep_pct: number;

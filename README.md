@@ -147,6 +147,8 @@ The engine follows standard sponsor-model conventions throughout:
 | **Exit costs** | Sale-process fees (banker, legal) as a % of exit EV, deducted from proceeds — the exit side of the fee drag that many teaching models omit. |
 | **Cash flow** | Net income + D&A + fee amortisation + PIK − capex − ΔNWC = cash available for debt service. ΔNWC = NWC % of revenue × change in revenue. |
 | **Debt waterfall** | 1) Mandatory amortisation (% of **original** principal — term-loan convention), 2) revolver repayment, 3) optional prepayment: the sweep % of remaining excess cash, applied **senior-first** to sweepable tranches. Shortfalls draw the revolver; if the revolver is exhausted the model fails loudly rather than printing a broken structure. |
+| **Interest income** | Balance-sheet cash earns a deposit rate on the **average balance**, inside the same circularity as the debt. Defaults to nil, which is right for a structure that sweeps everything and wrong for one hoarding cash. Under §163(j) it is business interest *income*, so it raises the deductible cap dollar for dollar — a capped borrower keeps deposit interest effectively tax-free. |
+| **How a structure fails** | Three distinct modes, reported separately because the remedies differ. **Liquidity**: a shortfall larger than the undrawn revolver. **Covenant**: a maintenance test breached while the borrower is still paying every coupon — net leverage (net of cash) and interest coverage (on *cash* interest only, so PIK does not count against it). **Maturity wall**: principal falling due inside the hold with no way to repay or roll it. Covenants default to **off**, because covenant-lite is what the market issued from 2006 onwards; whether a wall gets refinanced is an explicit input, because that is a market judgement rather than arithmetic. |
 | **Exit** | Exit EV = exit multiple × terminal EBITDA; exit equity = EV − net debt (floored at zero — limited liability). |
 | **Returns** | MOIC = exit equity / equity cheque. IRR by bisection on the sponsor's cash-flow vector. |
 | **Credit stats** | Net leverage, EBITDA/interest and (EBITDA−capex)/interest coverage, and FCF conversion by year — the covenant-style ratios a credit committee actually watches. |
@@ -200,9 +202,8 @@ Stated openly, because pretending they don't exist is how models lie. These are 
 **Genuine gaps, and what they'd change**
 
 - **No §382 limitation.** An LBO *is* an ownership change, so a target's pre-existing NOLs would be capped at roughly equity value × the long-term tax-exempt rate. The engine carries them forward unrestricted.
-- **No covenant test and no maturity wall.** The model fails on *liquidity* only — it runs out of cash. That is the rarer of the two real failure modes: most 2008–09 sponsor distress was covenant-driven, and TXU's actual death was a 2014 maturity wall. Coverage below 2.0× is flagged in the lifecycle but nothing acts on it.
 - **The PIK toggle election is greedy.** The engine elects only when a year already fails, which is when the revolver is exhausted — so it will burn revolver capacity at the senior rate for two years rather than PIK at the junior rate earlier. A treasurer looking a year ahead would decide differently, and on TXU that choice is load-bearing.
-- **No interest income on balance-sheet cash**, no per-tranche facility tenor, and the cash sweep is a flat percentage rather than the leverage-based step-down grid a credit agreement actually specifies.
+- **The cash sweep is a flat percentage** rather than the leverage-based step-down grid a credit agreement actually specifies.
 - **No management rollover, option pool, or transaction bonuses** — these dilute sponsor proceeds at exit, typically by low-single-digit percentages of equity value.
 - **No add-on acquisitions** — buy-and-build is a major value-creation lever the model can't express.
 - **Single-company, no segment build** — revenue is one line, not a mix.

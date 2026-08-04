@@ -257,6 +257,28 @@ def build_workbook(a: Assumptions):
     def per_year(fn):
         return [float(fn(y)) for y in range(1, years + 1)]
 
+    # Covenant levels as per-year inputs, not constants buried in a Checks
+    # formula. An agreement steps down, and an analyst asked "what if we had
+    # negotiated half a turn more headroom" must be able to answer it by typing
+    # in a cell.
+    cov_leverage = a.covenant_schedule("net_leverage_ceiling")
+    cov_coverage = a.covenant_schedule("interest_coverage_floor")
+    if cov_leverage is not None or cov_coverage is not None:
+        head(inp, r, "Maintenance covenants — by year"); r += 1
+        label(inp, r, "Year", indent=1)
+        for i in range(years):
+            c = inp.cell(row=r, column=2 + i, value=i + 1)
+            c.font = Font(bold=True, color=_BLACK)
+            c.alignment = Alignment(horizontal="center")
+        r += 1
+        if cov_leverage is not None:
+            year_row("Net leverage ceiling (x)", cov_leverage,
+                     "Leverage_Covenant", '0.00"x"')
+        if cov_coverage is not None:
+            year_row("Interest coverage floor (x)", cov_coverage,
+                     "Coverage_Covenant", '0.00"x"')
+        r += 1
+
     has_events = bool(a.divestitures or a.injections or a.recaps)
     toggles = [i for i, t in enumerate(a.tranches) if t.pik_toggle]
 
@@ -526,9 +548,14 @@ def build_workbook(a: Assumptions):
             if a.recaps and i > 0:
                 prior = "+".join(f"{col(k)}{{RECAP}}" for k in range(i))
                 base = f"({tr['amount_cell']}+{prior})"
-            c = model.cell(row=m, column=2 + i, value=(
-                f"=-MIN({base}*{slug}_Amort,"
-                f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']})"))
+            outstanding = f"{col(i)}{tr['open_row']}+{col(i)}{tr['pik_row']}"
+            scheduled = f"MIN({base}*{slug}_Amort,{outstanding})"
+            # A tranche reaching maturity owes its whole remaining balance, not
+            # its scheduled slice — unless it is assumed to be refinanced, in
+            # which case nothing falls due and it rolls at the stepped-up rate.
+            if t.maturity_years == i + 1 and not t.refinance_at_maturity:
+                scheduled = f"({outstanding})"
+            c = model.cell(row=m, column=2 + i, value=f"=-{scheduled}")
             c.font = Font(color=_BLACK); c.number_format = '#,##0.0'
         tr["amort_row"] = m; m += 1
 
@@ -955,6 +982,40 @@ def build_workbook(a: Assumptions):
         ("Unused revolver commitment",
          f"=Revolver_Commitment-MAX(Model!B{rev_close}:{last}{rev_close})", "positive"),
     ]
+
+    # Covenant headroom, one row per test, and only where the credit agreement
+    # actually has one. A cov-lite structure gets no row rather than a row
+    # reading "n/a" — the absence is the fact worth showing.
+    leverage_ceiling = a.covenant_schedule("net_leverage_ceiling")
+    coverage_floor = a.covenant_schedule("interest_coverage_floor")
+    def worst_headroom(per_year: list[str]) -> str:
+        """The tightest year's headroom. MIN across the hold, because a covenant
+        that holds in four years out of five is a covenant that was breached."""
+        return "=MIN(" + ",".join(per_year) + ")"
+
+    if leverage_ceiling is not None:
+        # Headroom in TURNS, per year, against that year's own ceiling — the
+        # levels step down, so a single ceiling would test the wrong number in
+        # every year but one.
+        checks.append((
+            "Leverage covenant headroom, tightest year (turns)",
+            worst_headroom([
+                f"Inputs!{col(i)}{ev['Leverage_Covenant']}"
+                f"-Model!{col(i)}{rows['Net debt']}/Model!{col(i)}{rows['EBITDA']}"
+                for i in range(years)
+            ]),
+            "positive"))
+
+    if coverage_floor is not None:
+        # Cash interest sits in the sheet as a negative, hence the sign flip.
+        checks.append((
+            "Coverage covenant headroom, tightest year (turns)",
+            worst_headroom([
+                f"Model!{col(i)}{rows['EBITDA']}/-Model!{col(i)}{rows['CashInt']}"
+                f"-Inputs!{col(i)}{ev['Coverage_Covenant']}"
+                for i in range(years)
+            ]),
+            "positive"))
     chk.cell(row=3, column=2, value="Value").font = Font(bold=True, size=9)
     chk.cell(row=3, column=3, value="Test").font = Font(bold=True, size=9)
     chk.cell(row=3, column=4, value="Result").font = Font(bold=True, size=9)

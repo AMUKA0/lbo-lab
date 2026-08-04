@@ -817,6 +817,14 @@ TXU = CaseStudy(
                 cash_rate=0.0800,
                 mandatory_amort_pct=0.01,
                 sweepable=True,
+                # TCEH's term loans came due in October 2014, seven years after
+                # the October 2007 close. The underwriting assumed they would be
+                # refinanced, as every 2007 underwriting did — and beyond this
+                # column's five-year hold it never comes due at all, which is
+                # itself the point: a five-year model cannot see a seven-year
+                # wall, and the deal was sold on a five-year model.
+                maturity_years=7,
+                refinance_at_maturity=True,
             ),
             DebtTranche(
                 name="Senior unsecured cash-pay notes",
@@ -877,8 +885,12 @@ TXU = CaseStudy(
             tax_rate=0.35,
         ),
         tranches=[
+            # The wall that actually killed it. EFH filed on 29 April 2014, six
+            # months ahead of the October 2014 term-loan maturity it could not
+            # refinance — it was still servicing interest at the time.
             DebtTranche(name="Senior secured term loan B", leverage_turns=4.71, cash_rate=0.0800,
-                        mandatory_amort_pct=0.01, sweepable=True),
+                        mandatory_amort_pct=0.01, sweepable=True,
+                        maturity_years=7, refinance_at_maturity=False),
             DebtTranche(name="Senior unsecured cash-pay notes", leverage_turns=1.78,
                         cash_rate=0.1025, sweepable=False),
             DebtTranche(name="Senior toggle notes (10.50%/11.25%)", leverage_turns=0.38,
@@ -950,6 +962,15 @@ TXU = CaseStudy(
         "There were several distressed exchanges and liability-management exercises "
         "before the filing. The engine has no restructuring mechanic — it either "
         "services the debt or reports that it cannot.",
+        "The 2014 maturity wall is recorded on the term loan but never reached. TCEH's "
+        "loans came due in October 2014; the underwriting assumed they would be "
+        "refinanced, as every 2007 underwriting did, and the realised column says they "
+        "would not have been — which is what happened. But the realised column runs out "
+        "of cash in year five, two years before the wall, so the engine kills this deal "
+        "for the wrong reason. Reality ran the other way round: EFH was servicing its "
+        "interest, on hedges and distressed exchanges, right up to a refinancing it "
+        "could not do. The model gets the death right and the cause early, and both "
+        "halves of that are worth knowing.",
     ],
     outcome=Outcome(
         exit_route="Chapter 11 filing, 29 April 2014",

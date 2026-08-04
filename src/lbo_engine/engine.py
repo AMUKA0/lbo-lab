@@ -38,22 +38,33 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from lbo_engine.assumptions import Assumptions
+from lbo_engine.failures import CovenantBreach, LiquidityFailure, MaturityWall
 from lbo_engine.sources_uses import SourcesAndUses, build_sources_and_uses
 
 _MAX_ITERATIONS = 200
 _TOLERANCE = 1e-10
 
 
-def _rates(t, elected: frozenset[str]) -> tuple[float, float]:
+def _rates(t, elected: frozenset[str], year_no: int = 1) -> tuple[float, float]:
     """Effective (cash, PIK) rates for a tranche given this year's elections.
 
     Electing the toggle moves the whole cash coupon into PIK and steps the rate
     up — the lender is compensated for waiting. Any unconditional `pik_rate`
     keeps accruing alongside.
+
+    A tranche that has been rolled past its maturity pays the refinancing spread
+    from the year after it rolled: new money is priced at the market of the day
+    it is raised, not the market the original deal was struck in.
     """
+    rolled = (
+        t.maturity_years is not None
+        and t.refinance_at_maturity
+        and year_no > t.maturity_years
+    )
+    spread = t.refinancing_spread if rolled else 0.0
     if t.name in elected:
-        return 0.0, t.pik_rate + t.cash_rate + t.pik_toggle_premium
-    return t.cash_rate, t.pik_rate
+        return 0.0, t.pik_rate + t.cash_rate + spread + t.pik_toggle_premium
+    return t.cash_rate + spread, t.pik_rate
 
 
 @dataclass
@@ -264,6 +275,9 @@ def run_lbo(a: Assumptions) -> LBOResult:
     # capital release — that cash went with the business.
     inorganic_decline = 0.0
 
+    leverage_ceiling = a.covenant_schedule("net_leverage_ceiling")
+    coverage_floor = a.covenant_schedule("interest_coverage_floor")
+
     years: list[YearRow] = []
     for i in range(a.hold_years):
         year_no = i + 1
@@ -328,6 +342,13 @@ def run_lbo(a: Assumptions) -> LBOResult:
                 _apply_recap(a, recap, row, ebitda, tranche_original)
                 / a.financing_fee_tenor_years
             )
+
+        # Covenants are tested LAST, on the year-end balance sheet after every
+        # capital event has landed. That order is the point of the mechanic: a
+        # divestiture or an equity injection that closed in December is exactly
+        # how a borrower stays inside its leverage test, and testing before them
+        # would report a breach the sponsor had already cured.
+        _test_covenants(a, row, leverage_ceiling, coverage_floor)
 
         years.append(row)
 
@@ -431,6 +452,55 @@ def _apply_recap(
     return fee
 
 
+def _test_covenants(
+    a: Assumptions,
+    row: YearRow,
+    leverage_ceiling: list[float] | None,
+    coverage_floor: list[float] | None,
+) -> None:
+    """Test the maintenance covenants, and raise on a breach.
+
+    Both ratios are struck the way a credit agreement strikes them, which is not
+    the way an accountant would:
+
+    * **Net leverage** is net of cash, because the agreement gives credit for
+      the balance sheet. A company can cure a leverage breach by holding cash it
+      was going to spend.
+    * **Interest coverage** is on CASH interest only. PIK accrual is not a
+      payment obligation this period, so it does not enter the test — which is
+      precisely why a PIK toggle buys covenant headroom as well as liquidity,
+      and why toggle structures were attractive to borrowers who saw a breach
+      coming.
+
+    Zero EBITDA is treated as a breach of any test rather than as a division by
+    zero. A company earning nothing has failed both, and reporting `inf` would
+    let it through.
+    """
+    year = row.year
+    if leverage_ceiling is not None:
+        ceiling = leverage_ceiling[year - 1]
+        net_debt = row.total_debt_closing - row.closing_cash
+        if row.ebitda <= 0:
+            raise CovenantBreach(year, "net leverage", f"{ceiling:.2f}x or below",
+                                 "EBITDA of nil or less, so leverage is unbounded")
+        leverage = net_debt / row.ebitda
+        if leverage > ceiling + 1e-9:
+            raise CovenantBreach(year, "net leverage", f"{ceiling:.2f}x or below",
+                                 f"{leverage:.2f}x")
+
+    if coverage_floor is not None:
+        floor = coverage_floor[year - 1]
+        if row.ebitda <= 0:
+            raise CovenantBreach(year, "interest coverage", f"{floor:.2f}x or above",
+                                 "EBITDA of nil or less")
+        if row.cash_interest_total <= 0:
+            return  # no cash interest to cover; the test cannot bind
+        coverage = row.ebitda / row.cash_interest_total
+        if coverage < floor - 1e-9:
+            raise CovenantBreach(year, "interest coverage", f"{floor:.2f}x or above",
+                                 f"{coverage:.2f}x")
+
+
 def _solve_year(
     a: Assumptions,
     year_no: int,
@@ -505,7 +575,7 @@ def _solve_year_with(
     given a fixed set of toggle elections."""
     # Seed: interest on opening balances (first pass of the iterative calc).
     cash_interest = {
-        t.name: _rates(t, elected)[0] * tranche_opening[t.name] for t in a.tranches
+        t.name: _rates(t, elected, year_no)[0] * tranche_opening[t.name] for t in a.tranches
     }
     revolver_interest = a.revolver.cash_rate * revolver_opening
     interest_income = a.cash_deposit_rate * opening_cash
@@ -537,7 +607,7 @@ def _solve_year_with(
         # second solve.
         interest_income = a.cash_deposit_rate * 0.5 * (opening_cash + row.closing_cash)
         cash_interest = {
-            t.name: _rates(t, elected)[0]
+            t.name: _rates(t, elected, year_no)[0]
             * 0.5
             * (tranche_opening[t.name] + row.tranches[t.name].closing)
             for t in a.tranches
@@ -580,7 +650,7 @@ def _build_year(
     """One pass of the year's income statement, cash flow and debt waterfall
     for a GIVEN interest charge and set of toggle elections."""
     pik_accrual = {
-        t.name: _rates(t, elected)[1] * tranche_opening[t.name] for t in a.tranches
+        t.name: _rates(t, elected, year_no)[1] * tranche_opening[t.name] for t in a.tranches
     }
     undrawn = max(a.revolver.commitment - revolver_opening, 0.0)
     undrawn_fee = a.revolver.undrawn_fee * undrawn
@@ -641,8 +711,19 @@ def _build_year(
     #    (opening + this year's PIK accretion).
     balances = {name: tranche_opening[name] + pik_accrual[name] for name in tranche_opening}
     mandatory: dict[str, float] = {}
+    maturing: dict[str, float] = {}
     for t in a.tranches:
         m = min(t.mandatory_amort_pct * tranche_original[t.name], balances[t.name])
+        # A tranche reaching maturity owes its whole remaining balance, not its
+        # scheduled slice. Unless it is assumed to be refinanced, in which case
+        # nothing falls due and it rolls at the stepped-up rate.
+        if (
+            t.maturity_years == year_no
+            and not t.refinance_at_maturity
+            and balances[t.name] > 0
+        ):
+            m = balances[t.name]
+            maturing[t.name] = m
         mandatory[t.name] = m
         balances[t.name] -= m
     cash_after_mandatory = cash_available - sum(mandatory.values())
@@ -654,12 +735,18 @@ def _build_year(
     if cash_after_mandatory < 0:
         # Shortfall: mandatory payments are contractual; the revolver funds the gap.
         revolver_draw = -cash_after_mandatory
-        if revolver_draw > a.revolver.commitment - revolver_opening + 1e-9:
-            raise ValueError(
-                f"Year {year_no}: cash shortfall of {revolver_draw:,.1f} exceeds "
-                f"undrawn revolver capacity — the structure fails. "
-                "Reduce leverage, add revolver commitment, or revisit operating assumptions."
-            )
+        capacity = a.revolver.commitment - revolver_opening
+        if revolver_draw > capacity + 1e-9:
+            if maturing:
+                # The gap is a wall of principal, not a trading shortfall. Naming
+                # it correctly matters: one is solved in the capital markets, the
+                # other by the business.
+                name, amount = max(maturing.items(), key=lambda kv: kv[1])
+                raise MaturityWall(
+                    year_no, name, amount,
+                    max(cash_available - sum(mandatory.values()) + amount, 0.0) + capacity,
+                )
+            raise LiquidityFailure(year_no, revolver_draw, max(capacity, 0.0))
         closing_cash = a.minimum_cash
     else:
         # 2. Repay the revolver first (it is the most senior, and prepayable at will).

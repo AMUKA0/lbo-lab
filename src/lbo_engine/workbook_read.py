@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from lbo_engine.assumptions import (
     Assumptions,
+    Covenants,
     DebtTranche,
     InterestLimitation,
     OperatingAssumptions,
@@ -170,6 +171,22 @@ def read_workbook(source) -> Assumptions:
         )
     }
 
+    # Maintenance covenants. Absent means cov-lite, which is both the model
+    # default and what the market actually issued — so a missing block reads as
+    # "no maintenance test", not as an error.
+    def optional_series(name: str) -> float | list[float] | None:
+        if location(name) is None:
+            return None
+        values = series(name)
+        if values is None:
+            return None
+        return values[0] if len(values) == 1 else values
+
+    covenants = Covenants(
+        net_leverage_ceiling=optional_series("Leverage_Covenant"),
+        interest_coverage_floor=optional_series("Coverage_Covenant"),
+    )
+
     # §163(j). Optional, so that a workbook exported before the cap existed
     # still reads; absent, the model default applies.
     cap_on = number("Interest_Limit_On", required=False)
@@ -216,6 +233,7 @@ def read_workbook(source) -> Assumptions:
             exit_fee_pct_ev=fields["Exit_Fee_Pct"],
             nol_limit_pct=fields["NOL_Limit"],
             interest_limitation=limitation,
+            covenants=covenants,
             minimum_cash=fields["Minimum_Cash"],
             cash_deposit_rate=fields["Deposit_Rate"],
             cash_sweep_pct=fields["Sweep_Pct"],

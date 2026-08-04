@@ -196,6 +196,43 @@ class TestWorkbookEndpoints:
         assert response.json()["assumptions"]["interest_limitation"] == (
             deal["interest_limitation"])
 
+    def test_a_covenant_break_still_reports_the_years_it_survived(self, deal):
+        """Regression. Shortening the hold for a partial run has to trim EVERY
+        per-year schedule, not just growth and margin — a covenant step-down
+        left at full length makes the engine reject the shortened deal, and the
+        caller is already inside an `except ValueError`, so the rejection is
+        indistinguishable from failing in year one. This reported 0 survived
+        years on a deal that serviced four of them."""
+        from api.main import _replay
+        from lbo_engine import Assumptions
+
+        payload = dict(deal)
+        payload["covenants"] = {
+            "net_leverage_ceiling": [6.0, 5.5, 5.0, 4.5, 2.0],
+            "interest_coverage_floor": None,
+        }
+        out = _replay(Assumptions.model_validate(payload))
+
+        assert out["failed"] and out["failure_kind"] == "covenant"
+        assert out["survived_years"] == 4
+        assert out["breaks_in_year"] == 5
+        assert out["partial_run"] is not None
+        assert len(out["partial_run"].years) == 4
+
+    def test_covenants_survive_the_round_trip(self, deal):
+        """A step-down schedule, so a reader that collapsed it to one number
+        would be caught."""
+        deal["covenants"] = {
+            "net_leverage_ceiling": [6.5, 6.0, 5.5, 5.0, 4.5],
+            "interest_coverage_floor": 2.0,
+        }
+        response = client.post(
+            "/api/import.xlsx",
+            files={"file": ("model.xlsx", self._workbook(deal), _XLSX)},
+        )
+        assert response.status_code == 200
+        assert response.json()["assumptions"]["covenants"] == deal["covenants"]
+
     def test_the_export_is_named_and_typed_for_excel(self, deal):
         response = client.post("/api/model.xlsx", json={"assumptions": deal})
         assert response.headers["content-type"].startswith(

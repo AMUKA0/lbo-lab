@@ -22,6 +22,13 @@ happened, against the reported outcome.
 **Excel, phases 1 and 2.** A live formula-driven workbook, tested against the
 engine by independent recalculation; and the round trip back in via named ranges.
 
+**Covenants, maturity walls and interest on cash.** Failure is no longer
+liquidity-only: a maintenance covenant breached while the borrower is still
+paying every coupon, and principal falling due with no way to roll it, are
+reported as distinct findings. Covenants default to off, because cov-lite is
+what the market issued. Cash earns a deposit rate, inside the same circularity
+as the debt.
+
 **§163(j).** The interest deduction capped at 30% of adjusted taxable income,
 ahead of the NOL, with the disallowed amount carrying forward indefinitely.
 In the engine and in the workbook, where the recalculation test proves the two
@@ -84,16 +91,11 @@ not feature-complete. Three things separate the current state from that:
 Two independent reviews found real errors; most were fixed (see git history).
 These were not:
 
-- **No covenant test and no maturity wall.** Failure is tested on liquidity only,
-  which is the rarer of the real modes. Most 2008–09 sponsor distress was
-  covenant-driven; TXU's actual death was a 2014 maturity wall.
 - **The PIK election is greedy.** The engine toggles only when a year already
   fails, i.e. when the revolver is exhausted — so it will burn revolver capacity
   at the senior rate for two years rather than PIK at the junior rate earlier. A
   treasurer looking a year ahead decides differently. On TXU that choice is
   load-bearing.
-- **No interest income on balance-sheet cash.** HCA's realised column carries
-  $1.5bn earning nothing.
 - **Selection bias in the library.** Four famous deals, three peak-vintage. Named
   in the README, but as a footnote when it is arguably the dominant limitation. A
   clean fifth case (Dollar General 2007 is the obvious candidate — same vintage,

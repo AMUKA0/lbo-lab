@@ -37,6 +37,23 @@ function bn(millions: number | null | undefined): string {
   return `$${(millions / 1000).toFixed(1)}bn`;
 }
 
+/** Which wall was hit. Three different findings with three different remedies:
+ *  collapsing them into "failed" throws away the more interesting half. */
+const BREAK_HEADLINE: Record<string, string> = {
+  liquidity: "Liquidity break",
+  covenant: "Covenant breach",
+  maturity: "Maturity wall",
+};
+
+const BREAK_BODY: Record<string, string> = {
+  liquidity:
+    "Operating cash flow no longer covers contractual interest and amortisation, and the revolver cannot fund the gap. The engine stops rather than printing a schedule that quietly runs a negative cash balance — which is what a model without a liquidity constraint would do, and why such models never show a deal failing.",
+  covenant:
+    "Solvency is not the question here: the company is paying every coupon on time. A maintenance covenant is tested on a ratio, and breaching it is an event of default that hands the lenders the keys unless it is waived, amended or cured. In practice it is almost always one of those three, at a price — and this is the mode most 2008–09 sponsor distress actually took.",
+  maturity:
+    "The business was servicing its interest. What it could not do was repay or roll a wall of principal falling due inside the hold. That is a failure in the capital markets rather than in the operating business, and it is how the largest buyout ever done actually ended.",
+};
+
 export function CaseStudy() {
   const { slug = "" } = useParams();
   const [data, setData] = useState<CaseDetail | null>(null);
@@ -199,16 +216,13 @@ export function CaseStudy() {
         {active?.failed && (
           <div className="notice notice-bad">
             <strong>
-              Liquidity break in year {active.breaks_in_year}, after{" "}
-              {active.survived_years}{" "}
+              {BREAK_HEADLINE[active.failure_kind ?? "liquidity"]} in year{" "}
+              {active.breaks_in_year}, after {active.survived_years}{" "}
               {active.survived_years === 1 ? "year" : "years"} of debt service.
             </strong>
             <div style={{ marginTop: "var(--s2)" }}>
-              Operating cash flow no longer covers contractual interest and amortisation,
-              and the revolver cannot fund the gap. The engine stops rather than printing a
-              schedule that quietly runs a negative cash balance — which is what a model
-              without a liquidity constraint would do, and why such models never show a deal
-              failing. The years it <em>did</em> service are below, so the drain is legible
+              {BREAK_BODY[active.failure_kind ?? "liquidity"]} The years it{" "}
+              <em>did</em> service are below, so the path into the break is legible
               rather than merely asserted.
             </div>
           </div>

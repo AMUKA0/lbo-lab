@@ -58,6 +58,29 @@ class DebtTranche(BaseModel):
         default=0.0075, ge=0, lt=0.1,
         description="Rate step-up when the toggle is elected (EFH's notes stepped ~75bps)",
     )
+    # The maturity wall. Principal falling due inside the hold is a different
+    # failure from running out of cash: the company can be servicing every
+    # coupon and still die because the market will not roll the paper. TXU is
+    # the case — it defaulted in 2014 on a wall, not on a missed payment.
+    #
+    # None means the tranche outlives the hold, which is the normal case and the
+    # right default: a seven-year loan on a five-year hold never comes due.
+    maturity_years: int | None = Field(
+        default=None, ge=1, le=15,
+        description="Years from close at which the remaining balance falls due; None = beyond the hold",
+    )
+    # Whether the wall is assumed to be refinanced. This is deliberately an
+    # INPUT rather than something the engine decides, because "could this have
+    # been refinanced in that year?" is a market judgement, not arithmetic —
+    # and stating it as an assumption is more honest than burying a guess.
+    refinance_at_maturity: bool = Field(
+        default=True,
+        description="Roll the tranche at maturity rather than repaying it",
+    )
+    refinancing_spread: float = Field(
+        default=0.0, ge=0, lt=0.1,
+        description="Rate step-up on refinancing — what the new money costs versus the old",
+    )
 
 
 class RevolverAssumptions(BaseModel):
@@ -227,6 +250,45 @@ class EquityInjection(BaseModel):
         return self
 
 
+class Covenants(BaseModel):
+    """Maintenance covenants — the ratios the lenders test each period.
+
+    Default is **no maintenance covenant at all**, and that is not laziness. It
+    is the covenant-lite structure that dominated the 2006–07 vintage and has
+    dominated the market since: the term loan carries incurrence tests only, so
+    there is nothing to trip between the closing and a missed payment. Hilton
+    and TXU were both financed that way, which is a large part of why neither
+    defaulted at the moment its ratios fell apart. Turning a covenant on is
+    therefore a statement about the credit agreement, not a modelling nicety.
+    Setting one where the real deal had none manufactures a default that never
+    existed.
+
+    Both tests accept a per-year schedule as well as a scalar, because a real
+    agreement steps down: a leverage covenant set at 7.0× with 30% headroom at
+    close typically tightens by half a turn a year until it reaches the
+    steady-state level.
+
+    Tested on the year-end balance sheet, which is a simplification — a real
+    agreement tests quarterly on a trailing-twelve-month basis, and a company
+    can breach in Q2 and be back inside by Q4. The annual test is the same
+    convention the rest of the model uses, and it is the conservative direction
+    only if the trough is at year end.
+    """
+
+    net_leverage_ceiling: float | list[float] | None = Field(
+        default=None,
+        description="Maximum net debt / EBITDA. None = no maintenance leverage test (cov-lite)",
+    )
+    interest_coverage_floor: float | list[float] | None = Field(
+        default=None,
+        description="Minimum EBITDA / cash interest. None = no maintenance coverage test",
+    )
+
+    @property
+    def any_test(self) -> bool:
+        return self.net_leverage_ceiling is not None or self.interest_coverage_floor is not None
+
+
 class InterestLimitation(BaseModel):
     """§163(j): the cap on how much business interest a company may deduct.
 
@@ -296,6 +358,7 @@ class Assumptions(BaseModel):
     # Capital structure
     tranches: list[DebtTranche] = Field(min_length=1, description="In order of seniority, most senior first")
     revolver: RevolverAssumptions = RevolverAssumptions()
+    covenants: Covenants = Covenants()
     recaps: list[DividendRecap] = Field(
         default_factory=list,
         description="Dividend recapitalisations, at most one per projection year",
@@ -375,6 +438,27 @@ class Assumptions(BaseModel):
         _as_schedule(self.operating.revenue_growth, self.hold_years, "revenue_growth")
         _as_schedule(self.operating.ebitda_margin, self.hold_years, "ebitda_margin")
         return self
+
+    @model_validator(mode="after")
+    def _validate_covenants(self) -> "Assumptions":
+        for name in ("net_leverage_ceiling", "interest_coverage_floor"):
+            value = getattr(self.covenants, name)
+            if value is not None:
+                _as_schedule(value, self.hold_years, name)
+        for t in self.tranches:
+            if t.maturity_years is not None and t.maturity_years > self.hold_years:
+                # Not an error — a tranche maturing after the exit simply never
+                # comes due here, and saying so is clearer than silently
+                # ignoring the field.
+                continue
+        return self
+
+    def covenant_schedule(self, name: str) -> list[float] | None:
+        """A covenant level per year, or None where the test does not apply."""
+        value = getattr(self.covenants, name)
+        if value is None:
+            return None
+        return _as_schedule(value, self.hold_years, name)
 
     @model_validator(mode="after")
     def _validate_recaps(self) -> "Assumptions":

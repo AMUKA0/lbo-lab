@@ -186,6 +186,65 @@ class TestInterestOnCash:
                 pytest.approx(year.interest_capacity, abs=1e-4)), f"year {year.year} cap"
 
 
+class TestCovenantsAndMaturity:
+    def test_a_cov_lite_deal_gets_no_covenant_rows(self, rich_deal):
+        """The absence is the fact worth showing. A row reading 'n/a' invites
+        someone to fill it in with a number the credit agreement never had."""
+        _, _, wb = _recalculate(_write(_acyclic(rich_deal), "covlite.xlsx"))
+        labels = [r[0].value for r in wb["Checks"].iter_rows(min_col=1, max_col=1)]
+        assert not any("covenant" in (v or "").lower() for v in labels)
+
+    def test_covenant_headroom_recalculates_and_reads_OK(self, rich_deal):
+        from lbo_engine import Covenants
+
+        deal = _acyclic(rich_deal)
+        deal.covenants = Covenants(
+            net_leverage_ceiling=[6.5, 6.0, 5.5, 5.0, 4.5],
+            interest_coverage_floor=2.0,
+        )
+        run_lbo(deal)  # comfortably inside both, so both rows must read OK
+
+        value, row, wb = _recalculate(_write(deal, "covenants.xlsx"))
+        for label in ("Leverage covenant headroom, tightest year (turns)",
+                      "Coverage covenant headroom, tightest year (turns)"):
+            r = row("Checks", label)
+            assert value("Checks", f"B{r}") > 0, label
+
+    def test_the_headroom_is_struck_against_each_year_own_ceiling(self, rich_deal):
+        """A step-down schedule tests a different level every year. Using one
+        number for all of them would be right in exactly one year."""
+        from lbo_engine import Covenants
+
+        deal = _acyclic(rich_deal)
+        ceilings = [6.5, 6.0, 5.5, 5.0, 4.5]
+        deal.covenants = Covenants(net_leverage_ceiling=ceilings)
+        value, row, _ = _recalculate(_write(deal, "stepdown.xlsx"))
+        result = run_lbo(deal)
+
+        expected = min(
+            c - (y.total_debt_closing - y.closing_cash) / y.ebitda
+            for c, y in zip(ceilings, result.years)
+        )
+        r = row("Checks", "Leverage covenant headroom, tightest year (turns)")
+        assert value("Checks", f"B{r}") == pytest.approx(expected, abs=1e-6)
+
+    def test_an_unrefinanced_maturity_repays_in_full_in_the_sheet(self, simple_deal):
+        deal = _acyclic(simple_deal)
+        deal.hold_years = 3
+        deal.tranches[0].leverage_turns = 0.2
+        deal.tranches[0].maturity_years = 3
+        deal.tranches[0].refinance_at_maturity = False
+
+        value, row, _ = _recalculate(_write(deal, "wall.xlsx"))
+        result = run_lbo(deal)
+        name = deal.tranches[0].name
+        for i, year in enumerate(result.years):
+            c = chr(ord("B") + i)
+            assert value("Model", f"{c}{row('Model', 'Closing')}") == pytest.approx(
+                year.tranches[name].closing, abs=1e-4), f"year {year.year}"
+        assert result.years[-1].tranches[name].closing == pytest.approx(0.0, abs=1e-9)
+
+
 class TestTheCircularity:
     def test_iteration_is_enabled_when_interest_is_circular(self, rich_deal):
         """Without this the workbook opens to a wall of circular-reference

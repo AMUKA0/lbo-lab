@@ -360,6 +360,27 @@ def schedule_csv(req: DealRequest) -> StreamingResponse:
 # runs in total and there is no reason to repeat them per request.
 
 
+def _truncate(a: Assumptions, years: int) -> Assumptions:
+    """The same deal over a shorter hold.
+
+    EVERY per-year schedule has to come with it, not just the operating ones.
+    A covenant step-down left at full length makes the engine reject the
+    shortened deal for the wrong reason — and because the caller is already
+    inside an `except ValueError`, that rejection is silently indistinguishable
+    from the structure failing in year one. It reported "survived 0 years" on a
+    deal that serviced four of them.
+    """
+    shorter = a.model_copy(deep=True)
+    shorter.hold_years = years
+    shorter.operating.revenue_growth = a.growth_schedule()[:years]
+    shorter.operating.ebitda_margin = a.margin_schedule()[:years]
+    for name in ("net_leverage_ceiling", "interest_coverage_floor"):
+        schedule = a.covenant_schedule(name)
+        if schedule is not None:
+            setattr(shorter.covenants, name, schedule[:years])
+    return shorter
+
+
 def _survivable_years(a: Assumptions) -> int:
     """The longest hold this structure can actually service.
 
@@ -370,12 +391,8 @@ def _survivable_years(a: Assumptions) -> int:
     a deal we already know is small.
     """
     for years in range(a.hold_years - 1, 0, -1):
-        shorter = a.model_copy(deep=True)
-        shorter.hold_years = years
-        shorter.operating.revenue_growth = a.growth_schedule()[:years]
-        shorter.operating.ebitda_margin = a.margin_schedule()[:years]
         try:
-            run_lbo(shorter)
+            run_lbo(_truncate(a, years))
             return years
         except ValueError:
             continue
@@ -386,21 +403,24 @@ def _replay(a: Assumptions) -> dict:
     """Run one column.
 
     A structure the engine refuses to model is a *result* here, not an error.
-    Rather than stopping at that, the failure is reported as a liquidity break:
-    the year it happens, the size of the shortfall, and a full schedule for the
-    years it did survive. That is what a credit committee would actually want —
-    "this breaks in year three" is information; "failed" is not.
+    Rather than stopping at that, the failure is reported with the year it
+    happens, the size of the gap, and a full schedule for the years it did
+    survive. That is what a credit committee would actually want — "this breaks
+    in year three" is information; "failed" is not.
+
+    `failure_kind` says WHICH wall was hit. A structure that runs out of cash, a
+    structure that breaches a leverage covenant while paying every coupon, and a
+    structure that cannot refinance a maturity are three different findings with
+    three different remedies, and collapsing them loses the interesting part.
     """
     try:
         result = run_lbo(a)
     except ValueError as exc:
+        kind = getattr(exc, "kind", "liquidity")
         survived = _survivable_years(a)
         partial = None
         if survived > 0:
-            shorter = a.model_copy(deep=True)
-            shorter.hold_years = survived
-            shorter.operating.revenue_growth = a.growth_schedule()[:survived]
-            shorter.operating.ebitda_margin = a.margin_schedule()[:survived]
+            shorter = _truncate(a, survived)
             run = run_lbo(shorter)
             credit = credit_stats(shorter).reset_index().to_dict(orient="records")
             # Deliberately no IRR or MOIC on a partial run: there was no exit in
@@ -410,6 +430,7 @@ def _replay(a: Assumptions) -> dict:
             partial.bridge = None
         return {
             "failed": True,
+            "failure_kind": kind,
             "message": str(exc),
             "breaks_in_year": survived + 1,
             "survived_years": survived,
@@ -423,6 +444,7 @@ def _replay(a: Assumptions) -> dict:
     credit = credit_stats(a).reset_index().to_dict(orient="records")
     return {
         "failed": False,
+        "failure_kind": None,
         "message": None,
         "irr": None if wiped else jsonable(sponsor_irr(result)),
         "moic": None if wiped else jsonable(result.moic),

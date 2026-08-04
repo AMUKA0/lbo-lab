@@ -79,8 +79,12 @@ export interface CaseColumn {
   /** Present only where this column breaks. */
   break_note: BreakNote | null;
   failed: boolean;
+  /** WHICH wall was hit. "Runs out of cash", "breaches its leverage covenant
+   *  while still paying every coupon", and "cannot refinance a maturity" are
+   *  three different findings with three different remedies. */
+  failure_kind: "liquidity" | "covenant" | "maturity" | null;
   message: string | null;
-  /** The year the structure runs out of liquidity, when it does. */
+  /** The year the structure breaks, when it does. */
   breaks_in_year: number | null;
   /** How many years it serviced itself before that. */
   survived_years: number;

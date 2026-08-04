@@ -191,6 +191,7 @@ export function Sidebar({
             tranche={tranche}
             index={index}
             canRemove={a.tranches.length > 1}
+            holdYears={a.hold_years}
             onChange={(mutate) => edit((n) => mutate(n.tranches[index]))}
             onRemove={() => edit((n) => n.tranches.splice(index, 1))}
           />
@@ -207,6 +208,9 @@ export function Sidebar({
                 pik_rate: 0,
                 mandatory_amort_pct: 0,
                 sweepable: false,
+                maturity_years: null,
+                refinance_at_maturity: true,
+                refinancing_spread: 0,
                 pik_toggle: false,
                 pik_toggle_premium: 0.0075,
               }),
@@ -215,6 +219,61 @@ export function Sidebar({
         >
           + Add tranche
         </button>
+      </Group>
+
+      {/* --------------------------------------------------------- covenants */}
+      <Group title="Maintenance covenants">
+        <div className="field-note" style={{ marginBottom: "var(--s2)" }}>
+          Off by default, and that is a statement about the credit agreement rather
+          than a shortcut. Covenant-lite — incurrence tests only, nothing to trip
+          between closing and a missed payment — is what the market issued from 2006
+          onwards, and a large part of why Hilton and TXU did not default at the
+          moment their ratios fell apart. Setting a covenant the real deal never had
+          manufactures a default that never happened.
+        </div>
+        <ToggleField
+          label="Net leverage ceiling"
+          checked={a.covenants.net_leverage_ceiling !== null}
+          onChange={(v) =>
+            edit((n) => (n.covenants.net_leverage_ceiling = v ? totalTurns + 1 : null))
+          }
+        />
+        {a.covenants.net_leverage_ceiling !== null && (
+          <ScheduleField
+            label="Maximum net debt / EBITDA"
+            value={a.covenants.net_leverage_ceiling}
+            years={a.hold_years}
+            min={1}
+            max={12}
+            step={0.25}
+            format={(v) => fmtMult(v, 2)}
+            onChange={(v) => edit((n) => (n.covenants.net_leverage_ceiling = v))}
+          />
+        )}
+        <ToggleField
+          label="Interest coverage floor"
+          checked={a.covenants.interest_coverage_floor !== null}
+          onChange={(v) =>
+            edit((n) => (n.covenants.interest_coverage_floor = v ? 2 : null))
+          }
+          note={
+            a.covenants.interest_coverage_floor !== null
+              ? "Struck on CASH interest only, because the test is about what must be paid this period. PIK accrual does not count against it — which is exactly why a toggle buys covenant headroom as well as liquidity."
+              : undefined
+          }
+        />
+        {a.covenants.interest_coverage_floor !== null && (
+          <ScheduleField
+            label="Minimum EBITDA / cash interest"
+            value={a.covenants.interest_coverage_floor}
+            years={a.hold_years}
+            min={0.5}
+            max={6}
+            step={0.1}
+            format={(v) => fmtMult(v, 2)}
+            onChange={(v) => edit((n) => (n.covenants.interest_coverage_floor = v))}
+          />
+        )}
       </Group>
 
       {/* ---------------------------------------------------------- revolver */}
@@ -551,6 +610,12 @@ export function Sidebar({
               // Per-year paths must match the new hold or the engine rejects them.
               n.operating.revenue_growth = resize(n.operating.revenue_growth, v);
               n.operating.ebitda_margin = resize(n.operating.ebitda_margin, v);
+              // Covenant step-downs are schedules too, and the engine rejects a
+              // mismatched length just as firmly.
+              if (n.covenants.net_leverage_ceiling !== null)
+                n.covenants.net_leverage_ceiling = resize(n.covenants.net_leverage_ceiling, v);
+              if (n.covenants.interest_coverage_floor !== null)
+                n.covenants.interest_coverage_floor = resize(n.covenants.interest_coverage_floor, v);
             })
           }
         />
@@ -581,12 +646,14 @@ function TrancheEditor({
   tranche,
   index,
   canRemove,
+  holdYears,
   onChange,
   onRemove,
 }: {
   tranche: DebtTranche;
   index: number;
   canRemove: boolean;
+  holdYears: number;
   onChange: (mutate: (t: DebtTranche) => void) => void;
   onRemove: () => void;
 }) {
@@ -664,6 +731,51 @@ function TrancheEditor({
         checked={tranche.sweepable}
         onChange={(v) => onChange((t) => (t.sweepable = v))}
       />
+      <ToggleField
+        label="Matures inside the hold"
+        checked={tranche.maturity_years !== null}
+        onChange={(v) => onChange((t) => (t.maturity_years = v ? holdYears : null))}
+        note={
+          tranche.maturity_years === null
+            ? "A seven-year loan on a five-year hold never comes due here, which is the normal case."
+            : undefined
+        }
+      />
+      {tranche.maturity_years !== null && (
+        <>
+          <SliderField
+            label="Matures in year"
+            value={tranche.maturity_years}
+            min={1}
+            max={Math.max(holdYears, tranche.maturity_years)}
+            step={1}
+            format={(v) => `year ${v}`}
+            onChange={(v) => onChange((t) => (t.maturity_years = v))}
+          />
+          <ToggleField
+            label="Refinanced at maturity"
+            checked={tranche.refinance_at_maturity}
+            onChange={(v) => onChange((t) => (t.refinance_at_maturity = v))}
+            note={
+              tranche.refinance_at_maturity
+                ? "The wall is rolled. An assumption, not an output — whether the market would have taken this paper in that year is a judgement, and stating it beats burying it."
+                : "The whole balance falls due and must be repaid from cash and the revolver. If it cannot be, the model reports a maturity wall rather than a liquidity break: the business was servicing its interest, and the failure is in the capital markets. This is how TXU actually died."
+            }
+          />
+          {tranche.refinance_at_maturity && (
+            <SliderField
+              label="Refinancing step-up"
+              value={tranche.refinancing_spread}
+              min={0}
+              max={0.06}
+              step={0.0025}
+              format={(v) => fmtPct(v, 2)}
+              onChange={(v) => onChange((t) => (t.refinancing_spread = v))}
+              note="What the new money costs versus the old, charged from the year after the roll. New paper is priced at the market of the day it is raised."
+            />
+          )}
+        </>
+      )}
       <ToggleField
         label="PIK toggle"
         checked={tranche.pik_toggle}
