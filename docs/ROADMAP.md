@@ -3,7 +3,7 @@
 What is planned, what is deliberately not, and the reasoning behind both. Kept
 because a decision without its reasoning gets re-litigated or silently reversed.
 
-Current state: **214 tests**, deployed on Cloud Run, source public.
+Current state: **257 tests**, deployed on Cloud Run, source public.
 
 ---
 
@@ -21,6 +21,20 @@ happened, against the reported outcome.
 
 **Excel, phases 1 and 2.** A live formula-driven workbook, tested against the
 engine by independent recalculation; and the round trip back in via named ranges.
+
+**A forward-looking PIK election.** The toggle is no longer a last resort fired
+once the revolver is already exhausted. `pik_election_headroom` makes the
+borrower look a year ahead and accrue at the junior rate rather than burn the
+last of a facility at the senior rate; a coverage covenant is also a reason to
+elect, and a leverage covenant deliberately is not, because PIK accretes to
+principal and makes leverage worse.
+
+*One review claim did not survive the numbers.* The finding said the greedy
+election was load-bearing on TXU. It is not: the toggle strip is 0.38 of a 6.87-
+turn structure, so electing it early saves a couple of hundred million against a
+multi-billion gap, and the realised column breaks in year five at every headroom
+setting. The mechanic was worth building; the specific claim about TXU was wrong,
+and is recorded here rather than quietly dropped.
 
 **Covenants, maturity walls and interest on cash.** Failure is no longer
 liquidity-only: a maintenance covenant breached while the borrower is still
@@ -91,11 +105,6 @@ not feature-complete. Three things separate the current state from that:
 Two independent reviews found real errors; most were fixed (see git history).
 These were not:
 
-- **The PIK election is greedy.** The engine toggles only when a year already
-  fails, i.e. when the revolver is exhausted — so it will burn revolver capacity
-  at the senior rate for two years rather than PIK at the junior rate earlier. A
-  treasurer looking a year ahead decides differently. On TXU that choice is
-  load-bearing.
 - **Selection bias in the library.** Four famous deals, three peak-vintage. Named
   in the README, but as a footnote when it is arguably the dominant limitation. A
   clean fifth case (Dollar General 2007 is the obvious candidate — same vintage,

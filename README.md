@@ -57,7 +57,7 @@ Cloud Run scales to zero, so a visit after an idle period waits a few seconds fo
 pytest
 ```
 
-197 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+257 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 
@@ -148,6 +148,7 @@ The engine follows standard sponsor-model conventions throughout:
 | **Cash flow** | Net income + D&A + fee amortisation + PIK − capex − ΔNWC = cash available for debt service. ΔNWC = NWC % of revenue × change in revenue. |
 | **Debt waterfall** | 1) Mandatory amortisation (% of **original** principal — term-loan convention), 2) revolver repayment, 3) optional prepayment: the sweep % of remaining excess cash, applied **senior-first** to sweepable tranches. Shortfalls draw the revolver; if the revolver is exhausted the model fails loudly rather than printing a broken structure. |
 | **Interest income** | Balance-sheet cash earns a deposit rate on the **average balance**, inside the same circularity as the debt. Defaults to nil, which is right for a structure that sweeps everything and wrong for one hoarding cash. Under §163(j) it is business interest *income*, so it raises the deductible cap dollar for dollar — a capped borrower keeps deposit interest effectively tax-free. |
+| **PIK toggle election** | Searched junior-first, cheapest option first, and *forward-looking*: `pik_election_headroom` elects rather than let the revolver fall below a given share undrawn. A treasurer would rather accrue at the junior rate than spend the last of a facility at the senior rate, because a drawn revolver is what you want available when the covenant conversation starts. A coverage covenant is also a reason to elect; a leverage covenant deliberately is not, since PIK accretes to principal and makes leverage worse. |
 | **How a structure fails** | Three distinct modes, reported separately because the remedies differ. **Liquidity**: a shortfall larger than the undrawn revolver. **Covenant**: a maintenance test breached while the borrower is still paying every coupon — net leverage (net of cash) and interest coverage (on *cash* interest only, so PIK does not count against it). **Maturity wall**: principal falling due inside the hold with no way to repay or roll it. Covenants default to **off**, because covenant-lite is what the market issued from 2006 onwards; whether a wall gets refinanced is an explicit input, because that is a market judgement rather than arithmetic. |
 | **Exit** | Exit EV = exit multiple × terminal EBITDA; exit equity = EV − net debt (floored at zero — limited liability). |
 | **Returns** | MOIC = exit equity / equity cheque. IRR by bisection on the sponsor's cash-flow vector. |

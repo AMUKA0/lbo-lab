@@ -189,6 +189,8 @@ def read_workbook(source) -> Assumptions:
 
     # §163(j). Optional, so that a workbook exported before the cap existed
     # still reads; absent, the model default applies.
+    headroom = number("PIK_Headroom", required=False)
+
     cap_on = number("Interest_Limit_On", required=False)
     cap_pct = number("Interest_Limit_Pct", required=False)
     cap_da = number("Interest_Limit_DA", required=False)
@@ -236,6 +238,7 @@ def read_workbook(source) -> Assumptions:
             covenants=covenants,
             minimum_cash=fields["Minimum_Cash"],
             cash_deposit_rate=fields["Deposit_Rate"],
+            pik_election_headroom=0.0 if headroom is None else headroom,
             cash_sweep_pct=fields["Sweep_Pct"],
             hold_years=int(hold),
             exit_multiple=fields["Exit_Multiple"],

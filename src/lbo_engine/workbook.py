@@ -235,6 +235,11 @@ def build_workbook(a: Assumptions):
     put(r, "Undrawn commitment fee", a.revolver.undrawn_fee, "Undrawn_Fee", '0.00%'); r += 1
     put(r, "Minimum cash ($m)", a.minimum_cash, "Minimum_Cash", '#,##0.0'); r += 1
     put(r, "Deposit rate on cash", a.cash_deposit_rate, "Deposit_Rate", '0.00%'); r += 1
+    # Carried so the round trip is lossless. The sheet reads the ELECTIONS, which
+    # are exported below as overridable 1/0 inputs — this is the policy that
+    # produced them, and losing it would silently change the next export.
+    put(r, "PIK election headroom (% of revolver)", a.pik_election_headroom,
+        "PIK_Headroom", '0%'); r += 1
     put(r, "Cash sweep (% of excess)", a.cash_sweep_pct, "Sweep_Pct", '0.0%'); r += 2
 
     # --- mid-hold capital events, one row per year so an analyst can move an

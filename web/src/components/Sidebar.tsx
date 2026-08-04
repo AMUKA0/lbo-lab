@@ -527,6 +527,20 @@ export function Sidebar({
       {/* ------------------------------------------------------- conventions */}
       <Group title="Modelling conventions">
         <SliderField
+          label="PIK election headroom"
+          value={a.pik_election_headroom}
+          min={0}
+          max={0.75}
+          step={0.05}
+          format={(v) => (v === 0 ? "last resort" : fmtPct(v, 0))}
+          onChange={(v) => edit((n) => (n.pik_election_headroom = v))}
+          note={
+            a.pik_election_headroom === 0
+              ? "The toggle is elected only when the year cannot otherwise be paid — by which point the revolver is already exhausted. Raise this to make the borrower look a year ahead."
+              : "Elect rather than let the revolver fall below this share undrawn. A treasurer would rather accrue at the junior rate than burn the last of a facility at the senior rate, because a drawn revolver is exactly what you want available when the covenant conversation starts. It is not free: the coupon compounds at a stepped-up rate."
+          }
+        />
+        <SliderField
           label="Deposit rate on cash"
           value={a.cash_deposit_rate}
           min={0}

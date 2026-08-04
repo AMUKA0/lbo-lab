@@ -321,7 +321,7 @@ def run_lbo(a: Assumptions) -> LBOResult:
         row = _solve_year(
             a, year_no, revenue, ebitda, da, ebit, capex, delta_nwc, fee_amort,
             tranche_original, tranche_opening, revolver_opening, opening_cash,
-            nol_opening, interest_cf_opening,
+            nol_opening, interest_cf_opening, coverage_floor,
         )
         row.equity_injected = injected
         row.debt_retired = retired
@@ -517,21 +517,36 @@ def _solve_year(
     opening_cash: float,
     nol_opening: float,
     interest_cf_opening: float,
+    coverage_floor: list[float] | None = None,
 ) -> YearRow:
-    """Resolve one year, electing the PIK toggle only if the year cannot be paid.
+    """Resolve one year, electing the PIK toggle junior-first.
 
-    The election is a *last resort*, searched junior-first: try paying everything
-    in cash; if that breaks the structure, toggle the most junior eligible
-    tranche and try again; then the next one up. This mirrors how the option is
-    actually used — nobody PIKs a coupon they can afford, because it steps the
-    rate up and compounds — and it means a toggle only ever appears in the
-    schedule at the exact moment it was needed.
+    Options are searched cheapest-first: pay everything in cash, then toggle the
+    most junior eligible tranche, then the next one up. Nobody PIKs a coupon
+    they can comfortably afford, because it steps the rate up and compounds.
 
-    Each attempt re-runs the full iterative interest solve, because changing a
+    What counts as "afford" is the interesting part, and the original rule was
+    too crude. It elected only once a year had already failed — which is to say,
+    once the revolver was exhausted — so the model would burn the last of a
+    facility at the senior rate rather than accrue at the junior rate a year
+    earlier. A treasurer looking one year ahead decides differently, because a
+    drawn revolver is precisely the facility you want available when the
+    covenant conversation starts.
+
+    So there are two passes. The first prefers the cheapest election that both
+    survives AND leaves the borrower somewhere a treasurer would accept:
+    `pik_election_headroom` of the revolver still undrawn, and inside any
+    coverage covenant. The second falls back to the cheapest election that
+    merely survives — because the policy is a preference, and refusing to model
+    a year that can be paid at all would be worse than paying it awkwardly.
+
+    Each attempt re-runs the full iterative interest solve, since changing a
     coupon changes the circularity it sits inside.
     """
     eligible = [t.name for t in a.tranches if t.pik_toggle]
     failure: ValueError | None = None
+    survivors: list[tuple[frozenset[str], YearRow]] = []
+
     # 0 elections, then 1 (most junior), then 2, ... — the cheapest fix first.
     for depth in range(len(eligible) + 1):
         elected = frozenset(eligible[::-1][:depth])
@@ -544,13 +559,52 @@ def _solve_year(
         except ValueError as exc:
             failure = exc
             continue
-        row.pik_elections = [n for n in eligible if n in elected]
-        for name in elected:
-            row.tranches[name].pik_elected = True
-        return row
+        survivors.append((elected, row))
+        if _comfortable(a, row, coverage_floor):
+            break
 
-    assert failure is not None
-    raise failure
+    if not survivors:
+        assert failure is not None
+        raise failure
+
+    # The first comfortable option if there is one, else the cheapest survivor.
+    elected, row = next(
+        ((e, r) for e, r in survivors if _comfortable(a, r, coverage_floor)),
+        survivors[0],
+    )
+    row.pik_elections = [n for n in eligible if n in elected]
+    for name in elected:
+        row.tranches[name].pik_elected = True
+    return row
+
+
+def _comfortable(a: Assumptions, row: YearRow, coverage_floor: list[float] | None) -> bool:
+    """Whether a treasurer would accept this year without reaching for the
+    toggle — or, having reached for it, would stop reaching.
+
+    Two tests, both things a treasurer actually watches:
+
+    * **Revolver headroom.** A facility drawn to the last dollar is not
+      liquidity, it is a covenant conversation waiting to happen.
+    * **The coverage covenant.** PIK genuinely relieves this one, because the
+      test is struck on cash interest.
+
+    Deliberately NOT the leverage covenant. Electing PIK accretes the coupon to
+    principal and so makes leverage *worse*; toggling to cure a leverage breach
+    would be exactly the wrong move, and a model that did it would be teaching
+    something false.
+    """
+    commitment = a.revolver.commitment
+    if commitment > 0 and a.pik_election_headroom > 0:
+        undrawn = commitment - row.revolver_closing
+        if undrawn < a.pik_election_headroom * commitment - 1e-9:
+            return False
+
+    if coverage_floor is not None and row.cash_interest_total > 0 and row.ebitda > 0:
+        if row.ebitda / row.cash_interest_total < coverage_floor[row.year - 1] - 1e-9:
+            return False
+
+    return True
 
 
 def _solve_year_with(

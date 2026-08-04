@@ -399,6 +399,26 @@ class Assumptions(BaseModel):
     # relief on a six-turn structure. Every case study in the library predates
     # the 2017 Act and switches it off.
     interest_limitation: InterestLimitation = InterestLimitation()
+    # How early the PIK toggle is elected. The engine's original rule was to
+    # elect only once a year had already failed — which is to say, once the
+    # revolver was exhausted. A treasurer does not wait that long. Looking one
+    # year ahead, they would rather accrue at the junior rate than burn the last
+    # of a revolver at the senior rate, because a drawn revolver is the facility
+    # you need available when the covenant conversation starts.
+    #
+    # Expressed as the share of the revolver commitment that must remain undrawn
+    # at year end. 0.0 keeps the old last-resort behaviour; 0.25 means "elect
+    # rather than let the facility fall below a quarter undrawn".
+    #
+    # Note what is deliberately NOT a trigger: a leverage covenant. Electing PIK
+    # makes leverage worse, because the coupon accretes to principal — so
+    # toggling to cure a leverage breach would be exactly the wrong move. Only
+    # the coverage test, which PIK genuinely relieves, is treated as a reason.
+    pik_election_headroom: float = Field(
+        default=0.0, ge=0, le=1,
+        description="Elect the toggle to keep this share of the revolver undrawn; "
+                    "0 elects only when the year cannot otherwise be paid",
+    )
     # The industry "circularity breaker". True = interest on the average of
     # opening and closing balances (correct, circular, solved iteratively).
     # False = interest on the opening balance only (approximate but acyclic) —

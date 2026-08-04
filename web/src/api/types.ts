@@ -95,6 +95,9 @@ export interface Assumptions {
   interest_limitation: InterestLimitation;
   interest_on_average_balance: boolean;
   covenants: Covenants;
+  /** How early the PIK toggle is elected: the share of the revolver that must
+   *  stay undrawn. 0 elects only when the year cannot otherwise be paid. */
+  pik_election_headroom: number;
   minimum_cash: number;
   cash_deposit_rate: number;
   cash_sweep_pct: number;
