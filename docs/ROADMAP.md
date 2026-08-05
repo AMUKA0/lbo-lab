@@ -112,11 +112,34 @@ not feature-complete. Three things separate the current state from that:
 
 ---
 
-## Open findings from the PE reviews
+## The reviews
 
-Two independent reviews found real errors; most were fixed (see git history).
-These were not:
+Three independent reviews, each briefed differently, and each found things the
+previous ones could not. Every finding is now closed; the record is kept because
+the *pattern* is more useful than the list.
 
+**First — "critique this as a PE professional."** Found the NOL parameter
+inverted in all eight case columns, reported IRRs that did not reconcile to
+their MOICs, a hindsight leak where RJR's 1990 rescue sat in the underwriting
+column, and a bridge whose displayed rows did not sum to the gain printed above
+them.
+
+**Second — "try to break it."** Found prose contradicting the engine on the same
+page, a comment claiming a test that did not exist, and `entry_ebitda=0.001`
+returning a confident 184× MOIC. Also that the fixed-rate assumption was filed
+as "neutral" when it is worth 15% of Hilton's answer.
+
+**Third — "could an analyst train on this?"** Found the exported Returns sheet
+striking MOIC on the closing cheque alone, so HCA's workbook reported 2.27×
+against the engine's 2.95× — with every check on the file reading OK, because
+the Excel bridge was tautological with the wrong entry equity. It also found the
+round trip silently dropping capital events, and a blue input no formula read.
+
+**What the pattern says.** The third review found what the first two could not,
+because it was asked whether someone could *learn* on this rather than whether
+it was correct — and answering that required opening the file rather than
+reading the page. Each brief reached a different layer. A fourth review would
+want a fourth question, not a repeat of any of these.
 
 ---
 
