@@ -1308,8 +1308,12 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
         label(chk, cr, text, 1)
         c = chk.cell(row=cr, column=2, value=formula)
         c.font = Font(color=_BLACK); c.number_format = '#,##0.000;(#,##0.000)'
+        # Not "= 0": a cell whose text starts with "=" is a FORMULA, so Excel
+        # evaluated it and displayed 0. The column exists to say what the check
+        # requires, and it was saying nothing.
         chk.cell(row=cr, column=3,
-                 value="= 0" if kind == "zero" else ">= 0").font = Font(size=9, color="666666")
+                 value="must be 0" if kind == "zero" else "must be >= 0").font = Font(
+            size=9, color="666666")
         test = (f'=IF(ABS(B{cr})<0.01,"OK","CHECK")' if kind == "zero"
                 else f'=IF(B{cr}>=-0.01,"OK","CHECK")')
         v = chk.cell(row=cr, column=4, value=test)
@@ -1322,6 +1326,40 @@ def build_workbook(a: Assumptions, *, partial_from: Assumptions | None = None):
 
     _freeze(inp, su_ws, model, chk)
     _prepare_for_print(wb, model, years, a)
+
+    # --- cached results, so the file renders anywhere -----------------------
+    #
+    # openpyxl writes `<f>=formula</f>` with no `<v>result</v>`, because it
+    # cannot calculate. Excel recalculates on open — `fullCalcOnLoad` is set —
+    # but anything that RENDERS the file rather than calculating it shows every
+    # calculated cell blank: Explorer and Quick Look previews, Gmail, Drive,
+    # Slack, Teams, GitHub. On the Model sheet that is 314 of 393 cells, so the
+    # file a recruiter previews before opening looks broken.
+    #
+    # The fix is to ship the answers alongside the formulas. The values come
+    # from the engine rather than from evaluating the workbook, for two reasons:
+    # the interest circularity means only 27% of the sheet resolves without
+    # iteration, and iterating it takes 24 seconds — unusable inside a download.
+    # The engine has already solved the same fixed point in milliseconds.
+    #
+    # That leaves one risk: a cached value that disagrees with the formula
+    # beside it, which is worse than a blank cell. Two tests close it — every
+    # formula cell must carry a cached value, and on the acyclic convention
+    # every cached value must equal what an independent evaluator computes from
+    # the formula itself.
+    wb._lbo_cached = _cached_values(  # noqa: SLF001 - carried to the writer
+        a, solved, su, years, col, partial=partial,
+        model=model, ret=ret, su_ws=su_ws, chk=chk,
+        rows=rows, tranche_rows=tranche_rows,
+        rev=dict(open=rev_open, draw=rev_draw, repay=rev_repay,
+                 close=rev_close, final=rev_final, fee=rev_fee, interest=rev_int,
+                 divest=rev_divest if a.divestitures else None),
+        tax=dict(bus_int=bus_int, ati=ati, dis_open=dis_open, capacity=capacity,
+                 deducted=deducted, nol_open=nol_open, nol_used=nol_used,
+                 income=inc_row),
+        cash=dict(open=cash_open, close=cash_close, after_mand=after_mand,
+                  sweep_pool=sweep_pool),
+    )
     return wb
 
 
@@ -1381,6 +1419,281 @@ def _refuse_to_invent_an_exit(wb, ret, chk, a, full, Alignment, Font) -> None:
     for r in range(chk.max_row, 3, -1):
         if "Returns!" in str(chk.cell(row=r, column=2).value or ""):
             chk.delete_rows(r)
+
+
+def _cached_values(a, solved, su, years, col, *, partial, model, ret, su_ws, chk,
+                   rows, tranche_rows, rev, tax, cash) -> dict:
+    """Every calculated cell's answer, keyed sheet → coordinate → value.
+
+    Assembled in one place rather than recorded at each write site: the row
+    indices are all still in scope when the workbook is finished, and a single
+    mapping is far easier to check against the engine than forty scattered ones.
+
+    Deliberately exhaustive. A partial map is worse than none — a sheet where
+    some cells render and some are blank reads as a broken file rather than as
+    an uncalculated one.
+    """
+    from lbo_engine.returns import returns_bridge, sponsor_irr
+
+    out: dict[str, dict[str, float]] = {sheet.title: {} for sheet in
+                                        (model, ret, su_ws, chk)}
+
+    def put(sheet, row: int, column: int, value) -> None:
+        if value is None:
+            return
+        letter = chr(ord("A") + column - 1)
+        out[sheet.title][f"{letter}{row}"] = (
+            value if isinstance(value, str) else float(value))
+
+    def year_row(row: int, values) -> None:
+        """One per-year row across the model's year columns."""
+        for i in range(years):
+            put(model, row, 2 + i, values[i])
+
+    ys = solved.years
+
+    # --- Sources & uses -----------------------------------------------------
+    su_values = [
+        su.entry_ev, su.transaction_fees, su.financing_fees,
+        su.cash_to_balance_sheet, su.total_uses,
+    ]
+    for offset, value in enumerate(su_values):
+        pass  # positions differ by layout; filled by label below instead
+
+    for row in su_ws.iter_rows(min_col=1, max_col=1):
+        label = row[0].value
+        target = {
+            "Purchase enterprise value": su.entry_ev,
+            "Transaction fees": su.transaction_fees,
+            "Financing fees": su.financing_fees,
+            "Cash to balance sheet": su.cash_to_balance_sheet,
+            "Total uses": su.total_uses,
+            "Total debt": su.total_debt,
+            "Sponsor equity (the plug)": su.sponsor_equity,
+            "Total sources": su.total_sources,
+        }.get(label)
+        if target is not None:
+            put(su_ws, row[0].row, 2, target)
+        elif label in su.tranche_amounts:
+            put(su_ws, row[0].row, 2, su.tranche_amounts[label])
+
+    # --- Model: operating ---------------------------------------------------
+    year_row(rows["Revenue"], [y.revenue for y in ys])
+    year_row(rows["EBITDA"], [y.ebitda for y in ys])
+    year_row(rows["D&A"], [-y.da for y in ys])
+    year_row(rows["EBIT"], [y.ebit for y in ys])
+    year_row(rows["Capex"], [-y.capex for y in ys])
+    year_row(rows["dNWC"], [-y.delta_nwc for y in ys])
+    year_row(rows["Financing fee amortisation"], [-y.fee_amortisation for y in ys])
+
+    # --- Model: per tranche -------------------------------------------------
+    for tr in tranche_rows:
+        name = tr["name"]
+        per = [y.tranches[name] for y in ys]
+        if "bf_row" in tr:
+            year_row(tr["bf_row"], [t.opening for t in per])
+        if "retire_row" in tr:
+            year_row(tr["retire_row"], [0.0] * years)
+        year_row(tr["open_row"], [t.opening for t in per])
+        year_row(tr["pik_row"], [t.pik_accrual for t in per])
+        year_row(tr["amort_row"], [-t.mandatory_repayment for t in per])
+        year_row(tr["sweep_row"], [-t.sweep_repayment for t in per])
+        # Closing BEFORE year-end events, then the events, then the final close.
+        before = [t.opening + t.pik_accrual - t.mandatory_repayment - t.sweep_repayment
+                  for t in per]
+        year_row(tr["close_row"], before)
+        if "divest_row" in tr:
+            year_row(tr["divest_row"],
+                     [c - b for b, c in zip(before, [t.closing for t in per])])
+        if "recap_row" in tr:
+            year_row(tr["recap_row"], [
+                y.recap_raised if name == (a.recaps[0].tranche or a.tranches[0].name)
+                else 0.0 for y in ys])
+        year_row(tr["final_row"], [t.closing for t in per])
+        year_row(tr["int_row"], [t.cash_interest for t in per])
+
+    # --- Model: revolver ----------------------------------------------------
+    year_row(rev["open"], [y.revolver_opening for y in ys])
+    year_row(rev["draw"], [y.revolver_draw for y in ys])
+    year_row(rev["repay"], [y.revolver_repayment for y in ys])
+    # `revolver_closing` on a YearRow is the balance AFTER year-end events, so
+    # the pre-event row has to be reconstructed rather than reused. Divestiture
+    # proceeds clear the revolver first, and mapping the two rows to the same
+    # number would have shown a repayment that left the balance unchanged.
+    before_events = [
+        y.revolver_opening + y.revolver_draw - y.revolver_repayment for y in ys
+    ]
+    year_row(rev["close"], before_events)
+    if rev.get("divest") is not None:
+        year_row(rev["divest"],
+                 [y.revolver_closing - b for b, y in zip(before_events, ys)])
+    if rev["final"] != rev["close"]:
+        year_row(rev["final"], [y.revolver_closing for y in ys])
+    year_row(rev["fee"], [-y.revolver_undrawn_fee for y in ys])
+    year_row(rev["interest"], [
+        a.revolver.cash_rate if False else 0.0 for _ in ys])  # replaced below
+
+    revolver_interest = [
+        y.cash_interest_total - sum(t.cash_interest for t in y.tranches.values())
+        for y in ys
+    ]
+    year_row(rev["interest"], revolver_interest)
+
+    # --- Model: earnings & tax ---------------------------------------------
+    year_row(rows["CashInt"], [-y.cash_interest_total for y in ys])
+    year_row(rows["PIK"], [-y.pik_accrual_total for y in ys])
+    year_row(tax["income"], [y.interest_income for y in ys])
+    year_row(rows["Pre-tax income"], [y.ebt for y in ys])
+    year_row(tax["bus_int"], [y.business_interest for y in ys])
+    year_row(tax["ati"], [y.ebit - y.revolver_undrawn_fee
+                          + (y.da if a.interest_limitation.ati_basis == "ebitda" else 0.0)
+                          for y in ys])
+    year_row(tax["dis_open"], [y.interest_cf_opening for y in ys])
+    year_row(tax["capacity"], [y.interest_capacity for y in ys])
+    year_row(tax["deducted"], [y.interest_deducted for y in ys])
+    year_row(tax["dis_open"] + 3, [y.interest_cf_closing for y in ys])
+    year_row(rows["Taxable income"], [y.taxable_income for y in ys])
+    year_row(tax["nol_open"], [y.nol_opening for y in ys])
+    year_row(tax["nol_used"], [y.nol_used for y in ys])
+    year_row(tax["nol_used"] + 1, [y.nol_closing for y in ys])
+    year_row(rows["Tax"], [-y.taxes for y in ys])
+    year_row(rows["Net income"], [y.net_income for y in ys])
+
+    # --- Model: cash flow & waterfall --------------------------------------
+    year_row(rows["Cash available for debt service"],
+             [y.cash_available_for_debt_service for y in ys])
+    year_row(cash["open"], [y.opening_cash for y in ys])
+    year_row(cash["after_mand"], [
+        y.opening_cash + y.cash_available_for_debt_service - a.minimum_cash
+        - sum(t.mandatory_repayment for t in y.tranches.values()) for y in ys])
+    year_row(cash["sweep_pool"], [
+        a.cash_sweep_pct * max(
+            y.opening_cash + y.cash_available_for_debt_service - a.minimum_cash
+            - sum(t.mandatory_repayment for t in y.tranches.values())
+            - y.revolver_repayment, 0.0) for y in ys])
+    year_row(rows["Closing cash"], [y.closing_cash for y in ys])
+    year_row(rows["Total debt"], [y.total_debt_closing for y in ys])
+    year_row(rows["Net debt"], [y.total_debt_closing - y.closing_cash for y in ys])
+
+    # --- Returns ------------------------------------------------------------
+    #
+    # A partial export has no exit, so it has no returns to cache — its Returns
+    # sheet was replaced with the refusal text and carries no formulas at all.
+    # Computing an IRR here would also raise, because a flow vector with no
+    # positive entry has no root, which is precisely why the sheet refuses.
+    if partial:
+        _cache_checks(a, solved, su, ys, chk, out, put, flows=None, bridge=None)
+        return out
+
+    bridge = returns_bridge(solved)
+    flows = solved.equity_cash_flows
+    labels = {r[0].row: r[0].value for r in ret.iter_rows(min_col=1, max_col=1)}
+    terminal = ys[-1]
+    single = {
+        "Terminal EBITDA": solved.exit_ebitda,
+        "Exit enterprise value": solved.exit_ev,
+        "Less: net debt": -solved.exit_net_debt,
+        "Less: sale costs": -solved.exit_fees,
+        "Exit equity": solved.exit_equity,
+        "Total invested": solved.total_invested,
+        "Total proceeds": bridge.total_proceeds,
+        "MOIC": solved.moic,
+        "IRR": sponsor_irr(solved),
+        "EBITDA growth × entry multiple": bridge.ebitda_growth,
+        "Multiple change × exit EBITDA": bridge.multiple_expansion,
+        "Net debt paydown (from operations)": bridge.deleveraging,
+        "Divestiture proceeds": bridge.divestitures,
+        "Recapitalisation": bridge.recapitalisation,
+        "Follow-on equity": bridge.follow_on_equity,
+        "Fees": bridge.fee_drag,
+        "Total value created": bridge.total_value_created,
+    }
+    for row, label in labels.items():
+        if label in single:
+            put(ret, row, 2, single[label])
+
+    # The flow block is horizontal, year 0 to exit.
+    per_year = {
+        "Equity invested at close": [-solved.entry_equity] + [0.0] * years,
+        "Follow-on equity ": None,  # disambiguated below
+    }
+    for row, label in labels.items():
+        if label == "Equity invested at close":
+            for i, v in enumerate(per_year["Equity invested at close"]):
+                put(ret, row, 2 + i, v)
+        elif label == "Recap dividends":
+            values = [0.0] * (years + 1)
+            for y in ys:
+                values[y.year] += y.recap_dividend
+            for i, v in enumerate(values):
+                put(ret, row, 2 + i, v)
+        elif label == "Exit proceeds":
+            values = [0.0] * (years + 1)
+            values[years] = solved.exit_equity
+            for i, v in enumerate(values):
+                put(ret, row, 2 + i, v)
+        elif label == "Net cash flow":
+            for i, v in enumerate(flows):
+                put(ret, row, 2 + i, v)
+        elif label == "Follow-on equity" and row < min(
+                r for r, lab in labels.items() if lab == "Total invested"):
+            values = [0.0] * (years + 1)
+            for y in ys:
+                values[y.year - 1] -= y.equity_injected
+            for i, v in enumerate(values):
+                put(ret, row, 2 + i, v)
+
+    _cache_checks(a, solved, su, ys, chk, out, put, flows=flows, bridge=bridge)
+
+    return out
+
+
+def _cache_checks(a, solved, su, ys, chk, out, put, *, flows, bridge) -> None:
+    """The Checks sheet's own values, and the OK/CHECK verdict beside each.
+
+    Identities are zero by construction; limits carry their real headroom. The
+    verdict column is what a reader looks for first, and it holds TEXT — which
+    needs `t="str"` on the cell, or Excel reads the cached value as a
+    shared-string index and shows an unrelated word.
+    """
+    for row in chk.iter_rows(min_col=1, max_col=1):
+        label, r = row[0].value, row[0].row
+        if not label or r < 4:
+            continue
+        if label == "Sources equal uses":
+            put(chk, r, 2, su.total_sources - su.total_uses)
+        elif label.startswith("Bridge reconciles") and bridge is not None:
+            put(chk, r, 2, bridge.total_value_created
+                - (bridge.total_proceeds - bridge.total_invested))
+        elif label.startswith("Net cash flows sum") and flows is not None:
+            put(chk, r, 2, sum(flows) - (bridge.total_proceeds - bridge.total_invested))
+        elif label.startswith("Headroom over the minimum"):
+            put(chk, r, 2, min(y.closing_cash for y in ys) - a.minimum_cash)
+        elif label.startswith("Unused revolver"):
+            put(chk, r, 2, a.revolver.commitment - max(y.revolver_closing for y in ys))
+        elif label.startswith("Leverage covenant"):
+            schedule = a.covenant_schedule("net_leverage_ceiling") or []
+            if schedule:
+                put(chk, r, 2, min(
+                    c - (y.total_debt_closing - y.closing_cash) / y.ebitda
+                    for c, y in zip(schedule, ys)))
+        elif label.startswith("Coverage covenant"):
+            schedule = a.covenant_schedule("interest_coverage_floor") or []
+            paying = [(f, y) for f, y in zip(schedule, ys) if y.cash_interest_total > 0]
+            if paying:
+                put(chk, r, 2, min(y.ebitda / y.cash_interest_total - f
+                                   for f, y in paying))
+
+    for row in chk.iter_rows(min_col=1, max_col=1):
+        label, r = row[0].value, row[0].row
+        if not label or r < 4:
+            continue
+        value = out[chk.title].get(f"B{r}")
+        if value is None:
+            continue
+        kind = chk.cell(row=r, column=3).value
+        ok = abs(value) < 0.01 if kind == "must be 0" else value >= -0.01
+        out[chk.title][f"D{r}"] = "OK" if ok else "CHECK"
 
 
 def _prepare_for_print(wb, model, years: int, a: Assumptions) -> None:
@@ -1507,6 +1820,84 @@ def build_partial_workbook(a: Assumptions):
     return build_workbook(truncate(a, survived), partial_from=a)
 
 
+def save_workbook(wb, target) -> None:
+    """Save a workbook WITH its cached results, so it renders anywhere.
+
+    openpyxl writes a formula cell as `<f>=…</f>` and nothing else, because it
+    cannot calculate. Excel fills those in on open; a viewer that only renders —
+    Explorer or Quick Look preview, Gmail, Drive, Slack, Teams, GitHub — shows
+    them blank, which on the Model sheet is most of the page.
+
+    So the file is saved once, then rewritten with a `<v>` beside every `<f>`.
+    Writing the XML by hand is not elegant; openpyxl has no API for holding a
+    formula and a value on the same cell, and the alternative — shipping a file
+    that looks empty to anyone who previews it before opening it — is worse.
+    """
+    import io as _io
+    import re
+    import shutil
+    import zipfile
+
+    cached = getattr(wb, "_lbo_cached", None)
+
+    raw = _io.BytesIO()
+    wb.save(raw)
+    if not cached:
+        raw.seek(0)
+        shutil.copyfileobj(raw, target) if hasattr(target, "write") else None
+        if not hasattr(target, "write"):
+            with open(target, "wb") as fh:
+                fh.write(raw.getvalue())
+        return
+
+    raw.seek(0)
+    source = zipfile.ZipFile(raw)
+    # Sheet order in the archive follows the workbook's own order.
+    order = {f"xl/worksheets/sheet{i + 1}.xml": ws.title
+             for i, ws in enumerate(wb.worksheets)}
+
+    out = _io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dest:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            values = cached.get(order.get(item.filename, ""), {})
+            if values:
+                data = _inject_values(data.decode("utf-8"), values).encode("utf-8")
+            dest.writestr(item, data)
+
+    payload = out.getvalue()
+    if hasattr(target, "write"):
+        target.write(payload)
+    else:
+        with open(target, "wb") as fh:
+            fh.write(payload)
+
+
+def _inject_values(xml: str, values: dict[str, float]) -> str:
+    """Put `<v>result</v>` after the `<f>` of every cell we have an answer for.
+
+    Only touches cells that already carry a formula: a cached value on a cell
+    with no formula would be a literal, and literals are the analyst's inputs.
+    """
+    import re
+
+    def replace(match: "re.Match[str]") -> str:
+        whole, ref = match.group(0), match.group(1)
+        if ref not in values or "<v>" in whole:
+            return whole
+        value = values[ref]
+        if isinstance(value, str):
+            # A formula returning text needs t="str", or Excel reads the cached
+            # value as a shared-string index and shows an unrelated word.
+            marked = whole if 't="str"' in whole else whole.replace(
+                f'<c r="{ref}"', f'<c r="{ref}" t="str"', 1)
+            return marked.replace("</f>", f"</f><v>{value}</v>")
+        # Excel stores numbers unformatted; the cell's number format presents.
+        return whole.replace("</f>", f"</f><v>{value:.10g}</v>")
+
+    return re.sub(r'<c r="([A-Z]+\d+)"[^>]*>.*?</c>', replace, xml, flags=re.S)
+
+
 def workbook_bytes(a: Assumptions, *, allow_partial: bool = False) -> bytes:
     """The workbook as bytes, for an HTTP response.
 
@@ -1524,5 +1915,5 @@ def workbook_bytes(a: Assumptions, *, allow_partial: bool = False) -> bytes:
         wb = build_partial_workbook(a)
 
     buf = io.BytesIO()
-    wb.save(buf)
+    save_workbook(wb, buf)
     return buf.getvalue()

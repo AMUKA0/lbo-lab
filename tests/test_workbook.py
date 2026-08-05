@@ -112,7 +112,7 @@ class TestItIsTheSameModel:
             # An identity must be zero; a limit only has to be the right side
             # of it. Asserting equality on a headroom check would fail on every
             # healthy deal.
-            if kind == "= 0":
+            if kind == "must be 0":
                 assert v == pytest.approx(0.0, abs=0.01), f"{label} = {v}"
             else:
                 assert v >= -0.01, f"{label} = {v}"
@@ -655,3 +655,124 @@ class TestTheRoundTripKeepsTheEvents:
         of zero — a DividendRecap(amount=0) would be rejected outright."""
         back = self._round_trip(rich_deal, "quiet", tmp_path)
         assert back.recaps == [] and back.injections == [] and back.divestitures == []
+
+
+class TestTheFileRendersWithoutBeingCalculated:
+    """openpyxl writes `<f>=…</f>` and nothing else, because it cannot
+    calculate. Excel fills those in on open — `fullCalcOnLoad` is set — but
+    anything that RENDERS the file rather than calculating it shows every
+    calculated cell blank: Explorer and Quick Look previews, Gmail, Drive,
+    Slack, Teams, GitHub. On the Model sheet that was 259 of 326 cells.
+
+    So the file a recruiter previews before opening it looked broken, which is
+    the worst possible first impression for the artefact this project calls its
+    strongest. The answers now ship alongside the formulas.
+    """
+
+    def _cells(self, payload: bytes):
+        """Every formula cell in the archive, with whether it carries a value."""
+        import io as _io
+        import re
+        import zipfile
+
+        found = []
+        with zipfile.ZipFile(_io.BytesIO(payload)) as z:
+            for name in z.namelist():
+                if not name.startswith("xl/worksheets/sheet"):
+                    continue
+                xml = z.read(name).decode("utf-8", "ignore")
+                for ref, body in re.findall(
+                    r'<c r="([A-Z]+\d+)"[^>]*>((?:(?!</c>).)*?)</c>', xml, re.S
+                ):
+                    if "<f" in body:
+                        found.append((name, ref, "<v>" in body))
+        return found
+
+    def test_every_formula_cell_carries_a_cached_result(self, rich_deal):
+        from lbo_engine.workbook import workbook_bytes
+
+        cells = self._cells(workbook_bytes(rich_deal))
+        assert cells, "no formula cells at all — the export is not a live model"
+        blank = [f"{n.split('/')[-1]}!{r}" for n, r, cached in cells if not cached]
+        assert not blank, (
+            f"{len(blank)} of {len(cells)} formula cells would render blank in a "
+            f"preview: {blank[:8]}"
+        )
+
+    def test_it_holds_on_a_deal_with_every_mechanic(self, eventful_deal):
+        """Recaps, injections and divestitures each add rows, and a row added
+        without a cached value is a blank line in the middle of a schedule."""
+        from lbo_engine.workbook import workbook_bytes
+
+        blank = [r for _, r, cached in self._cells(workbook_bytes(eventful_deal))
+                 if not cached]
+        assert not blank, blank[:8]
+
+    def test_the_cached_values_agree_with_their_own_formulas(self, rich_deal):
+        """The risk this creates, closed. A cached value that disagrees with the
+        formula beside it is worse than a blank cell: Excel would show one
+        number and recalculate to another.
+
+        Checked on the acyclic convention, which an independent evaluator can
+        reproduce — the circular variant is the reason the values come from the
+        engine in the first place.
+        """
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        from lbo_engine.workbook import workbook_bytes
+
+        deal = _acyclic(rich_deal)
+        payload = workbook_bytes(deal)
+        path = os.path.join(tempfile.mkdtemp(), "cached.xlsx")
+        with open(path, "wb") as fh:
+            fh.write(payload)
+
+        value, _, _ = _recalculate(path)
+        # `load_workbook` without data_only gives the formulas; with it, the
+        # cached values we wrote.
+        cached = load_workbook(path, data_only=True)
+
+        compared = 0
+        for sheet in ("Model", "Returns", "S&U"):
+            for row in cached[sheet].iter_rows():
+                for cell in row:
+                    if not isinstance(cell.value, (int, float)):
+                        continue
+                    try:
+                        computed = value(sheet, cell.coordinate)
+                    except Exception:
+                        continue  # not a formula cell, or unresolved
+                    assert cell.value == pytest.approx(computed, rel=1e-6, abs=1e-4), (
+                        f"{sheet}!{cell.coordinate}: cached {cell.value} but the "
+                        f"formula computes {computed}"
+                    )
+                    compared += 1
+        assert compared > 100, f"only {compared} cells compared — the test is hollow"
+
+    def test_the_check_verdicts_render_too(self, rich_deal):
+        """The Result column is what a reader looks for first, and it holds text
+        rather than a number — which needs `t="str"` on the cell or Excel reads
+        the cached value as a shared-string index and shows an unrelated word."""
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        from lbo_engine.workbook import workbook_bytes
+
+        wb = load_workbook(_io.BytesIO(workbook_bytes(rich_deal)), data_only=True)
+        verdicts = [wb["Checks"].cell(row=r, column=4).value
+                    for r in range(4, wb["Checks"].max_row + 1)]
+        assert verdicts and all(v == "OK" for v in verdicts), verdicts
+
+    def test_the_test_column_is_not_itself_a_formula(self, rich_deal):
+        """It used to read "= 0", which Excel treats as a formula and evaluates
+        to 0 — so the column meant to say what each check requires displayed a
+        bare zero instead."""
+        wb = build_workbook(rich_deal)
+        for r in range(4, wb["Checks"].max_row + 1):
+            kind = wb["Checks"].cell(row=r, column=3).value
+            if kind:
+                assert not str(kind).startswith("="), kind
+                assert "must be" in str(kind), kind

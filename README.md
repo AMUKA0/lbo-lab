@@ -71,7 +71,7 @@ Importing the app during the build moves that failure back to where it belongs: 
 pytest
 ```
 
-453 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
+468 tests. The engine tests assert the maths (below); the API tests assert the *transport* — that the bridge identity survives serialisation, that NaN and infinity arrive as `null` rather than as invalid JSON or a fabricated number, and that a structure the engine refuses to model returns a describable 422 rather than a 500.
 
 ## Excel export — a live model, not a dump
 
@@ -83,7 +83,9 @@ pip install -e ".[api,excel]"
 
 Five sheets, separated by role: `Inputs`, `S&U`, `Model`, `Returns`, `Checks`.
 
-Three things about it are load-bearing:
+Four things about it are load-bearing:
+
+- **The answers ship alongside the formulas.** openpyxl writes `<f>=…</f>` and nothing else, because it cannot calculate. Excel fills those in on open — the iteration flag is set in the file — but anything that *renders* rather than *calculates* shows every computed cell blank: Explorer and Quick Look previews, Gmail, Drive, Slack, Teams, GitHub. On the Model sheet that was 259 of 326 cells, so the file someone previewed before opening it looked broken. Every formula cell now carries a cached result taken from the engine, and two tests keep it honest: none may be missing, and on the acyclic convention every cached value must equal what an independent evaluator computes from the formula beside it. Evaluating the workbook instead was measured and rejected — the interest circularity leaves only 27% resolvable without iteration, and iterating takes 24 seconds.
 
 - **Iterative calculation is switched on in the file itself.** Interest on average balances is circular in Excel exactly as it is here, and a workbook that opens to a wall of circular-reference warnings reads as broken. The flag is written into the file rather than left for the user to find.
 - **Inputs are named ranges** (`Entry_EBITDA`, never `Inputs!B7`), because analysts insert rows and named ranges survive that.

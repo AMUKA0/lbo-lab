@@ -185,3 +185,34 @@ class TestTheFileAgreesWithThePage:
         assert value("S&U", f"B{row('S&U', 'Sponsor equity (the plug)')}") == (
             pytest.approx(result.entry_equity, abs=1e-3)
         )
+
+
+@pytest.mark.parametrize("case,name,deal", COLUMNS)
+def test_every_case_export_renders_without_being_calculated(case, name, deal):
+    """The file a recruiter previews before opening it.
+
+    openpyxl writes formulas with no cached result, so a viewer that renders
+    rather than calculates — Explorer or Quick Look preview, Gmail, Drive,
+    Slack, Teams, GitHub — showed most of the Model sheet blank. That is the
+    worst possible first impression for the artefact this project calls its
+    strongest, and it applied to all ten columns.
+    """
+    import re
+    import zipfile
+
+    payload = workbook_bytes(deal, allow_partial=True)
+    total = missing = 0
+    with zipfile.ZipFile(io.BytesIO(payload)) as z:
+        for entry in z.namelist():
+            if not entry.startswith("xl/worksheets/sheet"):
+                continue
+            xml = z.read(entry).decode("utf-8", "ignore")
+            for _ref, body in re.findall(
+                r'<c r="([A-Z]+\d+)"[^>]*>((?:(?!</c>).)*?)</c>', xml, re.S
+            ):
+                if "<f" in body:
+                    total += 1
+                    missing += "<v>" not in body
+
+    assert total > 200, f"{case.slug}/{name}: only {total} formula cells?"
+    assert missing == 0, f"{case.slug}/{name}: {missing} of {total} would render blank"
