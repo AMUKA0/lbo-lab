@@ -37,6 +37,7 @@ than silently dropped — see `_reject_unsupported`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from lbo_engine.assumptions import Assumptions
@@ -1834,7 +1835,6 @@ def save_workbook(wb, target) -> None:
     that looks empty to anyone who previews it before opening it — is worse.
     """
     import io as _io
-    import re
     import shutil
     import zipfile
 
@@ -1873,27 +1873,40 @@ def save_workbook(wb, target) -> None:
             fh.write(payload)
 
 
+# openpyxl writes an EMPTY placeholder after each formula — `<v/>`, not `<v>`.
+# A cell may carry at most ONE value element, so appending a second produces
+# markup that is well-formed XML and invalid OOXML: Excel discards the whole
+# sheet with "Load error. Line 1, column 0." The placeholder has to be REPLACED.
+_EMPTY_VALUE = re.compile(r"<v\s*/>|<v></v>")
+
+
 def _inject_values(xml: str, values: dict[str, float]) -> str:
-    """Put `<v>result</v>` after the `<f>` of every cell we have an answer for.
+    """Give every formula cell we have an answer for its cached result.
 
     Only touches cells that already carry a formula: a cached value on a cell
-    with no formula would be a literal, and literals are the analyst's inputs.
+    without one would be a literal, and literals are the analyst's inputs.
     """
-    import re
-
     def replace(match: "re.Match[str]") -> str:
         whole, ref = match.group(0), match.group(1)
-        if ref not in values or "<v>" in whole:
+        if ref not in values or "<f" not in whole:
             return whole
+
         value = values[ref]
         if isinstance(value, str):
             # A formula returning text needs t="str", or Excel reads the cached
             # value as a shared-string index and shows an unrelated word.
-            marked = whole if 't="str"' in whole else whole.replace(
-                f'<c r="{ref}"', f'<c r="{ref}" t="str"', 1)
-            return marked.replace("</f>", f"</f><v>{value}</v>")
-        # Excel stores numbers unformatted; the cell's number format presents.
-        return whole.replace("</f>", f"</f><v>{value:.10g}</v>")
+            rendered = f"<v>{value}</v>"
+            if 't="str"' not in whole:
+                whole = whole.replace(f'<c r="{ref}"', f'<c r="{ref}" t="str"', 1)
+        else:
+            # Excel stores numbers unformatted; the number format presents them.
+            rendered = f"<v>{value:.10g}</v>"
+
+        if _EMPTY_VALUE.search(whole):
+            return _EMPTY_VALUE.sub(rendered, whole, count=1)
+        if "<v>" in whole:  # already has a real value — leave it alone
+            return whole
+        return whole.replace("</f>", f"</f>{rendered}", 1)
 
     return re.sub(r'<c r="([A-Z]+\d+)"[^>]*>.*?</c>', replace, xml, flags=re.S)
 

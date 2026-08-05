@@ -14,6 +14,7 @@ formula shape and the iteration flag instead. Every other line of the model,
 including the whole waterfall, the tax build and the exit, is verified numerically.
 """
 
+import io
 import os
 import tempfile
 
@@ -688,6 +689,60 @@ class TestTheFileRendersWithoutBeingCalculated:
                         found.append((name, ref, "<v>" in body))
         return found
 
+    def test_no_cell_carries_two_values(self, rich_deal):
+        """The bug this class shipped, and the reason a strict XML parse was not
+        enough to catch it.
+
+        openpyxl writes an EMPTY placeholder after every formula — `<v/>`, not
+        `<v>` — so a guard checking for `"<v>"` did not see it, and the injection
+        appended a SECOND value element:
+
+            <c r="B4"><f>Model!F6</f><v>131.4</v><v /></c>
+
+        That is well-formed XML, so `ElementTree` parsed it happily and so did
+        openpyxl, which takes the first value. It is invalid OOXML — a cell may
+        carry at most one value — and Excel discarded every sheet it touched
+        with "Load error. Line 1, column 0."
+
+        The lesson is in the test name: well-formed is not valid.
+        """
+        import re
+        import zipfile
+
+        from lbo_engine.workbook import workbook_bytes
+
+        payload = workbook_bytes(rich_deal)
+        with zipfile.ZipFile(io.BytesIO(payload)) as z:
+            for entry in z.namelist():
+                if not entry.startswith("xl/worksheets/sheet"):
+                    continue
+                xml = z.read(entry).decode("utf-8")
+                for ref, body in re.findall(
+                    r'<c r="([A-Z]+\d+)"[^>]*>((?:(?!</c>).)*?)</c>', xml, re.S
+                ):
+                    values = len(re.findall(r"<v[ />]|<v>", body))
+                    assert values <= 1, (
+                        f"{entry}!{ref} carries {values} value elements — Excel "
+                        f"discards the whole sheet for this: {body[:110]}"
+                    )
+
+    def test_every_part_parses_strictly(self, eventful_deal):
+        """Necessary but NOT sufficient — see the test above. Kept because a
+        malformed part is a different failure with the same symptom, and this
+        one localises it to a part and a line."""
+        import xml.etree.ElementTree as ET
+        import zipfile
+
+        from lbo_engine.workbook import workbook_bytes
+
+        with zipfile.ZipFile(io.BytesIO(workbook_bytes(eventful_deal))) as z:
+            for entry in z.namelist():
+                if entry.endswith(".xml") or entry.endswith(".rels"):
+                    try:
+                        ET.fromstring(z.read(entry))
+                    except ET.ParseError as exc:
+                        raise AssertionError(f"{entry}: {exc}") from exc
+
     def test_every_formula_cell_carries_a_cached_result(self, rich_deal):
         from lbo_engine.workbook import workbook_bytes
 
@@ -776,3 +831,21 @@ class TestTheFileRendersWithoutBeingCalculated:
             if kind:
                 assert not str(kind).startswith("="), kind
                 assert "must be" in str(kind), kind
+
+
+def test_the_double_value_guard_fires_on_the_markup_that_shipped():
+    """A guard that cannot fail is decoration, and this one is guarding against
+    markup no code path produces any more — so it is reconstructed by hand."""
+    import re
+
+    broken = (
+        '<row r="4"><c r="B4" s="26"><f>Model!F6</f><v>131.4</v><v /></c></row>'
+    )
+    doubled = [
+        ref for ref, body in re.findall(
+            r'<c r="([A-Z]+\d+)"[^>]*>((?:(?!</c>).)*?)</c>', broken, re.S)
+        if len(re.findall(r"<v[ />]|<v>", body)) > 1
+    ]
+    assert doubled == ["B4"], (
+        "the pattern the guard uses no longer detects two value elements"
+    )

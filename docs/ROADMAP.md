@@ -3,7 +3,7 @@
 What is planned, what is deliberately not, and the reasoning behind both. Kept
 because a decision without its reasoning gets re-litigated or silently reversed.
 
-Current state: **468 tests**, deployed on Cloud Run, source public.
+Current state: **471 tests**, deployed on Cloud Run, source public.
 
 ---
 
